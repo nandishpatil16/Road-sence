@@ -70,13 +70,19 @@ router.post('/', auth.optional, async (req, res) => {
       waterlogging: 'construction',
     };
     const targetRole = roleMap[incident.type];
+    const isRoadBlock = incident.type === 'construction' || incident.tags?.includes('road_block') || (incident.title && incident.title.includes('[ROAD BLOCK]'));
 
     if (io) {
       io.emit('incident-update', { type: 'new', incident });
-      if (targetRole) {
+      // If it's a road block created by construction authority, do not echo back to construction room
+      if (targetRole && !(targetRole === 'construction' && isRoadBlock)) {
         io.to(targetRole).emit('incident-update', { type: 'new', incident });
       }
       io.to('admin').emit('incident-update', { type: 'new', incident });
+      if (isRoadBlock) {
+        io.to('user').emit('incident-update', { type: 'new', incident });
+        io.to('all').emit('incident-update', { type: 'new', incident });
+      }
     }
 
     // Automatically generate Alert for high-visibility notification across authority boards
@@ -85,14 +91,18 @@ router.post('/', auth.optional, async (req, res) => {
       const isRoad = ['pothole', 'road_damage', 'waterlogging', 'construction'].includes(incident.type);
       const isMedical = incident.type === 'medical';
 
-      const targetRoles = isRoad
+      const targetRoles = isRoadBlock
+        ? ['user', 'all', 'admin', 'police', 'ambulance']
+        : isRoad
         ? ['construction', 'admin', 'all']
         : isMedical
         ? ['ambulance', 'admin', 'all']
         : ['police', 'admin', 'all'];
 
       const alert = new Alert({
-        title: `⚠️ ${incident.title || (incident.type ? incident.type.toUpperCase() : 'CIVIC REPORT')}`,
+        title: isRoadBlock
+          ? (incident.title?.startsWith('🚧') ? incident.title : `🚧 ${incident.title}`)
+          : `⚠️ ${incident.title || (incident.type ? incident.type.toUpperCase() : 'CIVIC REPORT')}`,
         message: incident.description || `${incident.type} reported at ${incident.location?.address || 'Belagavi'}`,
         type: isRoad ? 'traffic' : isMedical ? 'emergency' : 'warning',
         severity: incident.priority === 'critical' ? 'critical' : incident.priority === 'high' ? 'high' : 'medium',

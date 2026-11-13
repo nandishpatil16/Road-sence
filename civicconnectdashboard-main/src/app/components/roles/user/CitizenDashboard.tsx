@@ -1239,13 +1239,106 @@ function BottomNav({ tab, setTab }: { tab: MainTab; setTab: (t: MainTab) => void
   );
 }
 
+function playCitizenChime() {
+  try {
+    const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.connect(g);
+    g.connect(c.destination);
+    osc.frequency.setValueAtTime(520, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(780, c.currentTime + 0.22);
+    g.gain.setValueAtTime(0.25, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, c.currentTime + 0.35);
+    osc.start(c.currentTime);
+    osc.stop(c.currentTime + 0.35);
+  } catch {}
+}
+
 // ─── Root Citizen Dashboard ───────────────────────────────────────────────────
 export function CitizenDashboard({ onLogout }: { onLogout?: () => void }) {
   const [tab, setTab] = useState<MainTab>("home");
+  const [activeRoadAlert, setActiveRoadAlert] = useState<any>(null);
+
+  useEffect(() => {
+    const socket = socketIO(SOCKET_URL);
+    socket.on('connect', () => {
+      socket.emit('join-role', 'all');
+      socket.emit('join-role', 'user');
+    });
+
+    socket.on('new-alert', (alert: any) => {
+      const isRoadBlock = alert?.title?.toLowerCase().includes('road block') || alert?.title?.includes('[ROAD BLOCK]') || alert?.type === 'traffic';
+      playCitizenChime();
+      if (isRoadBlock) {
+        toast.error(`🚧 ROAD CLOSURE ALERT: ${alert.title}\n📍 ${alert.location?.address || 'Belagavi'}. Detours in effect!`, {
+          duration: 9000,
+          action: {
+            label: 'View Map',
+            onClick: () => setTab('map')
+          }
+        });
+        setActiveRoadAlert(alert);
+      } else {
+        toast.warning(`⚠️ Live Civic Alert: ${alert.title || 'City Broadcast'}`);
+      }
+    });
+
+    socket.on('incident-update', (d: any) => {
+      if (d?.type === 'new' && (d.incident?.type === 'construction' || d.incident?.tags?.includes('road_block') || d.incident?.title?.includes('[ROAD BLOCK]'))) {
+        playCitizenChime();
+        toast.error(`🚧 Road Closure Detour: ${d.incident.title}\n📍 ${d.incident.location?.address || 'Belagavi'}`, {
+          duration: 8000,
+          action: {
+            label: 'View Map',
+            onClick: () => setTab('map')
+          }
+        });
+        setActiveRoadAlert({
+          title: d.incident.title,
+          location: d.incident.location,
+          message: d.incident.description || 'Road barricaded for infrastructure work.'
+        });
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 bg-white overflow-hidden flex flex-col font-sans">
       <Css />
+
+      {/* Real-time Road Block / Detour Alert Notification Banner */}
+      {activeRoadAlert && (
+        <div className="fixed top-3 left-3 right-3 z-[100] bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-2xl p-3 shadow-2xl flex items-center justify-between border border-red-400 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl shrink-0">🚧</span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wider text-orange-200">Road Block / Closure Alert</p>
+              <p className="text-xs font-bold truncate">{activeRoadAlert.title}</p>
+              <p className="text-[10px] text-orange-100 truncate">{activeRoadAlert.location?.address || 'Belagavi'} • Detour routes active</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 ml-2 shrink-0">
+            <button
+              onClick={() => { setTab('map'); setActiveRoadAlert(null); }}
+              className="px-2.5 py-1 bg-white text-orange-700 font-black text-[11px] rounded-lg shadow-xs hover:bg-orange-50 active:scale-95 transition-all"
+            >
+              View Map
+            </button>
+            <button
+              onClick={() => setActiveRoadAlert(null)}
+              className="w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-lg text-white font-bold text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-hidden relative">
         {tab === "home"      && <HomeScreen setTab={setTab} />}
         {tab === "map"       && <MapScreen />}
