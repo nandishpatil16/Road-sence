@@ -82,7 +82,11 @@ class ApiService {
 
   async createIncident(data: any) {
     const res = await fetch(`${API_BASE}/incidents`, { method: "POST", headers: this.headers(), body: JSON.stringify(data) });
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.message || "Failed to submit incident report");
+    }
+    return json;
   }
 
   async updateIncident(id: string, data: any) {

@@ -114,11 +114,26 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
     s.on('connect', () => s.emit('join-role','construction'));
     s.on('incident-update', (d:any) => {
       if (d?.type==='new' && d?.incident) {
-        const t = d.incident.type; if (['pothole','road_damage','waterlogging'].includes(t) || d.incident.title?.toLowerCase().includes('road') || d.incident.title?.toLowerCase().includes('pothole')) {
+        const t = d.incident.type; if (['pothole','road_damage','waterlogging','construction'].includes(t) || d.incident.title?.toLowerCase().includes('road') || d.incident.title?.toLowerCase().includes('pothole')) {
           playAlert(); setAlertData(d.incident); setShowBanner(true); fetch_();
           toast.error(`🚧 NEW REPORT: ${d.incident.title||t}\n📍 ${d.incident.location?.address||'Unknown'}`, {duration:8000});
           setTimeout(()=>setShowBanner(false),20000);
         }
+      }
+    });
+    s.on('new-alert', (alert: any) => {
+      if (alert?.targetRoles?.includes('construction') || alert?.targetRoles?.includes('all') || alert?.type === 'traffic') {
+        playAlert();
+        setAlertData({
+          title: alert.title,
+          type: 'pothole',
+          description: alert.message,
+          location: alert.location,
+        });
+        setShowBanner(true);
+        fetch_();
+        toast.error(`🚧 NEW ROAD ALERT: ${alert.title}\n📍 ${alert.location?.address || 'Belagavi'}`, { duration: 8000 });
+        setTimeout(() => setShowBanner(false), 20000);
       }
     });
     return () => { s.disconnect(); };

@@ -39,41 +39,81 @@ router.get('/:id', auth.optional, async (req, res) => {
 });
 
 // POST /api/incidents
-router.post('/', auth, async (req, res) => {
+router.post('/', auth.optional, async (req, res) => {
   try {
-    const incident = new Incident({
-      ...req.body,
-      reportedBy: req.user.id,
-    });
+    const incidentData = { ...req.body };
+    if (req.user && req.user.id) {
+      incidentData.reportedBy = req.user.id;
+    }
+    const incident = new Incident(incidentData);
     await incident.save();
-    await incident.populate('reportedBy', 'name role email phone');
 
-    // Emit real-time event
+    if (incident.reportedBy) {
+      try {
+        await incident.populate('reportedBy', 'name role email phone');
+      } catch (e) {}
+    }
+
+    // Emit real-time incident event
     const io = req.app.get('io');
+    const roleMap = {
+      accident: 'police',
+      traffic: 'police',
+      traffic_jam: 'police',
+      crime: 'police',
+      illegal_parking: 'police',
+      medical: 'ambulance',
+      construction: 'construction',
+      pothole: 'construction',
+      road_damage: 'construction',
+      flood: 'construction',
+      waterlogging: 'construction',
+    };
+    const targetRole = roleMap[incident.type];
+
     if (io) {
       io.emit('incident-update', { type: 'new', incident });
-      // Notify relevant authority rooms
-      const roleMap = {
-        accident: 'police',
-        traffic: 'police',
-        crime: 'police',
-        illegal_parking: 'police',
-        medical: 'ambulance',
-        construction: 'construction',
-        pothole: 'construction',
-        road_damage: 'construction',
-        flood: 'construction',
-        waterlogging: 'construction',
-      };
-      const targetRole = roleMap[incident.type];
-      if (targetRole) io.to(targetRole).emit('incident-update', { type: 'new', incident });
+      if (targetRole) {
+        io.to(targetRole).emit('incident-update', { type: 'new', incident });
+      }
       io.to('admin').emit('incident-update', { type: 'new', incident });
+    }
+
+    // Automatically generate Alert for high-visibility notification across authority boards
+    try {
+      const Alert = require('../models/Alert');
+      const isRoad = ['pothole', 'road_damage', 'waterlogging', 'construction'].includes(incident.type);
+      const isMedical = incident.type === 'medical';
+
+      const targetRoles = isRoad
+        ? ['construction', 'admin', 'all']
+        : isMedical
+        ? ['ambulance', 'admin', 'all']
+        : ['police', 'admin', 'all'];
+
+      const alert = new Alert({
+        title: `⚠️ ${incident.title || (incident.type ? incident.type.toUpperCase() : 'CIVIC REPORT')}`,
+        message: incident.description || `${incident.type} reported at ${incident.location?.address || 'Belagavi'}`,
+        type: isRoad ? 'traffic' : isMedical ? 'emergency' : 'warning',
+        severity: incident.priority === 'critical' ? 'critical' : incident.priority === 'high' ? 'high' : 'medium',
+        targetRoles,
+        location: incident.location,
+        createdBy: req.user ? req.user.id : undefined,
+      });
+      await alert.save();
+
+      if (io) {
+        io.emit('new-alert', alert);
+        targetRoles.forEach(r => io.to(r).emit('new-alert', alert));
+      }
+    } catch (alertErr) {
+      console.warn('[Incidents] Alert creation error:', alertErr.message);
     }
 
     res.status(201).json(incident);
   } catch (err) {
     console.error('[Incidents] POST error:', err);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: err.message || 'Server error' });
   }
 });
 
