@@ -116,21 +116,30 @@ async function seedInitialUsers() {
 }
 
 async function startDatabase() {
-  const MONGODB_URI = process.env.MONGODB_URI;
+  let MONGODB_URI = process.env.MONGODB_URI;
   if (MONGODB_URI) {
+    MONGODB_URI = MONGODB_URI.trim();
+    if (MONGODB_URI.endsWith('?')) {
+      MONGODB_URI += 'retryWrites=true&w=majority';
+    } else if (!MONGODB_URI.includes('retryWrites=')) {
+      MONGODB_URI += (MONGODB_URI.includes('?') ? '&' : '?') + 'retryWrites=true&w=majority';
+    }
+
     try {
-      console.log(`[MongoDB] Connecting to primary database...`);
-      await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 3000, family: 4 });
-      console.log(`[MongoDB] Connected successfully to primary database`);
+      console.log(`[MongoDB] Connecting to primary Atlas database...`);
+      await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 12000 });
+      console.log(`[MongoDB] ✅ Connected successfully to primary database! Cloud memory is optimal.`);
       await seedInitialUsers();
       return;
     } catch (err) {
-      console.warn(`[MongoDB] Primary database connection failed (${err.message}). Starting local fallback database...`);
+      console.warn(`[MongoDB] Primary database connection failed: ${err.message}`);
+      console.warn(`[MongoDB] ⚠️ Note: If you see 'IP that isn't whitelisted', go to MongoDB Atlas -> Network Access -> Add IP Address -> 'Allow Access From Anywhere' (0.0.0.0/0).`);
     }
   }
 
-  // Fallback to high-performance local in-memory MongoDB
+  // Fallback to local in-memory MongoDB
   try {
+    console.log(`[MongoDB] Starting local fallback database (warning: high memory usage in 512MB environments)...`);
     const { MongoMemoryServer } = require('mongodb-memory-server');
     const mongod = await MongoMemoryServer.create();
     const uri = mongod.getUri();
