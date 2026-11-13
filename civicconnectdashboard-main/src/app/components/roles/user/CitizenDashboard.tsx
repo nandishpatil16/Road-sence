@@ -12,13 +12,14 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { toast } from "sonner";
+import { TravelPrediction } from "./TravelPrediction";
 
 // ─── Main Tab Type ────────────────────────────────────────────────────────────
 type MainTab = "home" | "map" | "alerts" | "reports" | "profile" | "ai" | "emergency" | "route" | "track";
 type MapLayer = "traffic" | "accidents" | "parking";
 
 const QUICK_ACTIONS = [
-  { id: "report",    label: "Report Issue",    Icon: AlertTriangle, bg: "#FEF2F2", color: "#EF4444" },
+  { id: "reports",   label: "Report Issue",    Icon: AlertTriangle, bg: "#FEF2F2", color: "#EF4444" },
   { id: "ai",        label: "AI Prediction",   Icon: Brain,         bg: "#F5F3FF", color: "#7C3AED" },
   { id: "emergency", label: "Emergency SOS",   Icon: Shield,        bg: "#FFF1F2", color: "#E11D48" },
   { id: "alerts",    label: "Live Alerts",     Icon: Radio,         bg: "#EFF6FF", color: "#2563EB" },
@@ -29,7 +30,7 @@ const QUICK_ACTIONS = [
 const REPORT_TYPES = [
   { id: "accident",        label: "Accident",          icon: AlertTriangle, color: "#EF4444", bg: "#FEF2F2", authority: "Traffic Police & Emergency" },
   { id: "traffic_jam",     label: "Traffic Jam",       icon: Car,           color: "#F97316", bg: "#FFF7ED", authority: "Traffic Police" },
-  { id: "pothole",         label: "Pothole",           icon: AlertCircle,   color: "#92400E", bg: "#FEF3C7", authority: "Public Works (PWD)" },
+  { id: "pothole",         label: "Pothole",           icon: AlertCircle,   color: "#92400E", bg: "#FEF3C7", authority: "Construction Authority / Public Works (PWD)" },
   { id: "road_damage",     label: "Road Damage",       icon: Layers,        color: "#52525B", bg: "#F4F4F5", authority: "Construction Authority" },
   { id: "waterlogging",    label: "Waterlogging",      icon: Navigation,    color: "#0284C7", bg: "#EFF6FF", authority: "Drainage & Municipal PWD" },
   { id: "illegal_parking", label: "Illegal Parking",   icon: Car,           color: "#F97316", bg: "#FFF7ED", authority: "Traffic Enforcement Police" },
@@ -887,39 +888,7 @@ function EmergencyScreen({ setTab }: { setTab: (t: MainTab) => void }) {
 
 // ─── 6. AI Traffic Prediction Screen ──────────────────────────────────────────
 function AIPredictionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
-  return (
-    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
-      <div className="mb-4">
-        <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Predictive Intelligence</p>
-        <h2 className="text-[22px] font-black text-black">AI Traffic Forecast</h2>
-      </div>
-
-      <div className="card p-4 mb-4 border border-zinc-100 shadow-xs">
-        <div className="flex items-center gap-2 mb-3">
-          <Brain size={18} className="text-purple-600" />
-          <span className="font-bold text-sm text-black">Belagavi Congestion Forecast</span>
-        </div>
-        <div className="space-y-3">
-          {[
-            { time: "05:00 PM - 06:30 PM", route: "RPD Cross to College Road", congestion: "88% Congested", delay: "+18m" },
-            { time: "06:30 PM - 08:00 PM", route: "Rani Channamma to Bogarves", congestion: "64% Moderate", delay: "+9m" },
-            { time: "08:00 PM - 10:00 PM", route: "Khanapur Rd to Camp",       congestion: "22% Clear",    delay: "Normal" },
-          ].map(f => (
-            <div key={f.route} className="bg-zinc-50 p-3 rounded-xl border border-zinc-100 flex items-center justify-between text-xs">
-              <div>
-                <div className="font-bold text-black">{f.route}</div>
-                <div className="text-[11px] text-zinc-400 mt-0.5">{f.time}</div>
-              </div>
-              <span className="font-bold text-purple-600">{f.delay}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <button onClick={() => setTab("home")} className="btn-secondary w-full py-3.5 text-xs font-bold">
-        Back to Dashboard
-      </button>
-    </div>
-  );
+  return <TravelPrediction onBack={() => setTab("home")} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
