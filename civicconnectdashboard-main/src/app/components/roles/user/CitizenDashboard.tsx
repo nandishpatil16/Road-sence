@@ -922,32 +922,463 @@ function AIPredictionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
   );
 }
 
-// ─── 7. Safe Route Screen ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── A* ALGORITHM ENGINE ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Node in the road graph
+interface RoadNode {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+// Directed edge between two road nodes
+interface RoadEdge {
+  to: string;        // target node id
+  weight: number;    // actual road distance in km
+  congestion: number;// 1.0 = clear, 2.0 = heavy traffic (cost multiplier)
+  road: string;      // road name label
+}
+
+// Belagavi Road Graph — real intersections as graph nodes
+const BELAGAVI_NODES: RoadNode[] = [
+  { id: "rpd",     name: "RPD Cross",           lat: 15.8497, lng: 74.4977 },
+  { id: "rcircle", name: "Rani Channamma Circle",lat: 15.8520, lng: 74.5020 },
+  { id: "college", name: "College Road",         lat: 15.8440, lng: 74.5040 },
+  { id: "khana",   name: "Khanapur Road",        lat: 15.8600, lng: 74.4900 },
+  { id: "kls",     name: "KLS Bank Cross",       lat: 15.8560, lng: 74.5000 },
+  { id: "angol",   name: "Angol",                lat: 15.8380, lng: 74.4950 },
+  { id: "camp",    name: "Camp Area",            lat: 15.8360, lng: 74.5080 },
+  { id: "bogarvs", name: "Bogarves",             lat: 15.8525, lng: 74.5085 },
+  { id: "udyambag",name: "Udyambag",             lat: 15.8450, lng: 74.5120 },
+  { id: "gokak",   name: "Gokak Road",           lat: 15.8650, lng: 74.4800 },
+  { id: "nehru",   name: "Nehru Nagar",          lat: 15.8480, lng: 74.5200 },
+  { id: "market",  name: "City Market",          lat: 15.8395, lng: 74.5000 },
+  { id: "station", name: "Railway Station",      lat: 15.8420, lng: 74.4870 },
+  { id: "airport", name: "Sambra Airport",       lat: 15.8625, lng: 74.6183 },
+  { id: "unkal",   name: "Unkal Lake Road",      lat: 15.8740, lng: 74.5050 },
+];
+
+// Adjacency list (bidirectional roads with congestion weights)
+const BELAGAVI_EDGES: Record<string, RoadEdge[]> = {
+  rpd:     [
+    { to: "rcircle", weight: 0.65, congestion: 1.8, road: "College Road" },
+    { to: "khana",   weight: 1.60, congestion: 1.1, road: "Khanapur Rd" },
+    { to: "station", weight: 0.90, congestion: 1.2, road: "Station Rd" },
+    { to: "angol",   weight: 1.10, congestion: 1.0, road: "Angol Link Rd" },
+  ],
+  rcircle: [
+    { to: "rpd",     weight: 0.65, congestion: 1.8, road: "College Road" },
+    { to: "bogarvs", weight: 0.80, congestion: 1.5, road: "Bogarves Rd" },
+    { to: "kls",     weight: 0.55, congestion: 1.3, road: "KLS Cross Rd" },
+    { to: "college", weight: 0.75, congestion: 1.4, road: "College Road" },
+  ],
+  college: [
+    { to: "rcircle", weight: 0.75, congestion: 1.4, road: "College Road" },
+    { to: "camp",    weight: 0.90, congestion: 1.0, road: "Camp Road" },
+    { to: "market",  weight: 0.60, congestion: 1.2, road: "Market Road" },
+  ],
+  khana:   [
+    { to: "rpd",     weight: 1.60, congestion: 1.1, road: "Khanapur Rd" },
+    { to: "gokak",   weight: 1.20, congestion: 1.0, road: "NH-548K" },
+    { to: "kls",     weight: 0.70, congestion: 1.0, road: "Ring Road" },
+    { to: "unkal",   weight: 1.30, congestion: 1.0, road: "Unkal Bridge" },
+  ],
+  kls:     [
+    { to: "rcircle", weight: 0.55, congestion: 1.3, road: "KLS Cross Rd" },
+    { to: "khana",   weight: 0.70, congestion: 1.0, road: "Ring Road" },
+    { to: "bogarvs", weight: 0.60, congestion: 1.2, road: "Bogarvs Link" },
+    { to: "unkal",   weight: 1.00, congestion: 1.0, road: "Unkal Rd" },
+  ],
+  angol:   [
+    { to: "rpd",     weight: 1.10, congestion: 1.0, road: "Angol Rd" },
+    { to: "station", weight: 0.75, congestion: 1.0, road: "Station Link" },
+    { to: "market",  weight: 0.80, congestion: 1.1, road: "Market Rd" },
+  ],
+  camp:    [
+    { to: "college", weight: 0.90, congestion: 1.0, road: "Camp Rd" },
+    { to: "market",  weight: 0.70, congestion: 1.0, road: "Market Access" },
+    { to: "udyambag",weight: 0.65, congestion: 1.0, road: "Udyambag Rd" },
+  ],
+  bogarvs: [
+    { to: "rcircle", weight: 0.80, congestion: 1.5, road: "Bogarves Rd" },
+    { to: "kls",     weight: 0.60, congestion: 1.2, road: "Bogarvs Link" },
+    { to: "nehru",   weight: 0.90, congestion: 1.0, road: "Nehru Link" },
+    { to: "udyambag",weight: 0.70, congestion: 1.1, road: "Udyambag Blvd" },
+  ],
+  udyambag:[
+    { to: "bogarvs", weight: 0.70, congestion: 1.1, road: "Udyambag Blvd" },
+    { to: "camp",    weight: 0.65, congestion: 1.0, road: "Camp Access" },
+    { to: "nehru",   weight: 0.80, congestion: 1.0, road: "Nehru Rd" },
+    { to: "airport", weight: 8.50, congestion: 1.0, road: "Airport Rd NH-548" },
+  ],
+  gokak:   [
+    { to: "khana",   weight: 1.20, congestion: 1.0, road: "NH-548K" },
+    { to: "unkal",   weight: 1.50, congestion: 1.0, road: "Unkal Bypass" },
+  ],
+  nehru:   [
+    { to: "bogarvs", weight: 0.90, congestion: 1.0, road: "Nehru Link" },
+    { to: "udyambag",weight: 0.80, congestion: 1.0, road: "Nehru Rd" },
+    { to: "airport", weight: 7.80, congestion: 1.0, road: "Airport Expressway" },
+  ],
+  market:  [
+    { to: "college", weight: 0.60, congestion: 1.2, road: "Market Rd" },
+    { to: "angol",   weight: 0.80, congestion: 1.1, road: "Angol Rd" },
+    { to: "camp",    weight: 0.70, congestion: 1.0, road: "Market Access" },
+    { to: "station", weight: 0.55, congestion: 1.1, road: "Station Rd" },
+  ],
+  station: [
+    { to: "rpd",     weight: 0.90, congestion: 1.2, road: "Station Rd" },
+    { to: "angol",   weight: 0.75, congestion: 1.0, road: "Station Link" },
+    { to: "market",  weight: 0.55, congestion: 1.1, road: "Station Rd" },
+  ],
+  airport: [
+    { to: "udyambag",weight: 8.50, congestion: 1.0, road: "NH-548" },
+    { to: "nehru",   weight: 7.80, congestion: 1.0, road: "Airport Expressway" },
+  ],
+  unkal:   [
+    { to: "khana",   weight: 1.30, congestion: 1.0, road: "Unkal Bridge" },
+    { to: "kls",     weight: 1.00, congestion: 1.0, road: "Unkal Rd" },
+    { to: "gokak",   weight: 1.50, congestion: 1.0, road: "Unkal Bypass" },
+  ],
+};
+
+// ─── Haversine distance (great-circle in km) — the A* heuristic h(n) ──────────
+function haversine(a: RoadNode, b: RoadNode): number {
+  const R = 6371; // Earth radius km
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const chord = sinLat * sinLat +
+    Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * sinLng * sinLng;
+  return R * 2 * Math.atan2(Math.sqrt(chord), Math.sqrt(1 - chord));
+}
+
+// A* result
+interface AStarResult {
+  path: RoadNode[];        // ordered list of nodes from start to goal
+  roads: string[];         // road name for each step
+  totalKm: number;         // total road distance
+  totalMins: number;       // estimated travel time
+  nodesExplored: number;   // how many nodes A* opened
+  congestionLevel: string; // overall congestion label
+  avoided: string[];       // roads avoided due to high congestion
+}
+
+// ─── Core A* Implementation ───────────────────────────────────────────────────
+function runAStar(startId: string, goalId: string): AStarResult | null {
+  const nodes = Object.fromEntries(BELAGAVI_NODES.map(n => [n.id, n]));
+  if (!nodes[startId] || !nodes[goalId]) return null;
+
+  // MinHeap priority queue entry
+  interface PQEntry { id: string; fScore: number; }
+
+  // Simple sorted array as min-heap (fine for small graphs)
+  const openSet: PQEntry[] = [];
+  const gScore: Record<string, number> = {};  // g(n): cost from start to n
+  const fScore: Record<string, number> = {};  // f(n) = g(n) + h(n)
+  const cameFrom: Record<string, string> = {};
+  const cameVia: Record<string, string> = {};  // road name used to reach node
+  const congestionUsed: Record<string, number> = {};
+
+  // Initialize
+  BELAGAVI_NODES.forEach(n => {
+    gScore[n.id] = Infinity;
+    fScore[n.id] = Infinity;
+  });
+  gScore[startId] = 0;
+  fScore[startId] = haversine(nodes[startId], nodes[goalId]);
+  openSet.push({ id: startId, fScore: fScore[startId] });
+
+  const closedSet = new Set<string>();
+  let nodesExplored = 0;
+  const avoided: string[] = [];
+
+  while (openSet.length > 0) {
+    // Pop node with lowest f(n) from open set
+    openSet.sort((a, b) => a.fScore - b.fScore);
+    const current = openSet.shift()!;
+
+    if (current.id === goalId) {
+      // ── Reconstruct path ──────────────────────────────────────────────────
+      const path: RoadNode[] = [];
+      const roads: string[] = [];
+      let cur = goalId;
+      while (cameFrom[cur]) {
+        path.unshift(nodes[cur]);
+        roads.unshift(cameVia[cur]);
+        cur = cameFrom[cur];
+      }
+      path.unshift(nodes[startId]);
+
+      const totalKm = parseFloat(gScore[goalId].toFixed(2));
+      const avgCongestion = Object.values(congestionUsed).length > 0
+        ? Object.values(congestionUsed).reduce((a, b) => a + b, 0) / Object.values(congestionUsed).length
+        : 1.0;
+      const totalMins = Math.round((totalKm / 30) * 60 * avgCongestion); // 30 km/h avg city speed
+      const congestionLevel = avgCongestion > 1.5 ? "Heavy Traffic" : avgCongestion > 1.2 ? "Moderate" : "Clear Roads";
+
+      return { path, roads, totalKm, totalMins, nodesExplored, congestionLevel, avoided };
+    }
+
+    closedSet.add(current.id);
+    nodesExplored++;
+
+    const neighbors = BELAGAVI_EDGES[current.id] || [];
+    for (const edge of neighbors) {
+      if (closedSet.has(edge.to)) continue;
+
+      // Skip extremely congested edges (congestion > 1.7) and record avoided roads
+      if (edge.congestion > 1.7) {
+        const avoidLabel = `${nodes[current.id].name} → ${nodes[edge.to].name} (${edge.road})`;
+        if (!avoided.includes(avoidLabel)) avoided.push(avoidLabel);
+        continue; // A* will naturally route around it via cheaper paths
+      }
+
+      // g(n) = actual weighted road cost (distance × congestion)
+      const tentativeG = gScore[current.id] + (edge.weight * edge.congestion);
+
+      if (tentativeG < gScore[edge.to]) {
+        // This path is better — record it
+        cameFrom[edge.to] = current.id;
+        cameVia[edge.to] = edge.road;
+        congestionUsed[edge.to] = edge.congestion;
+        gScore[edge.to] = tentativeG;
+        // f(n) = g(n) + h(n) where h = straight-line Haversine to goal
+        fScore[edge.to] = tentativeG + haversine(nodes[edge.to], nodes[goalId]);
+
+        if (!openSet.find(e => e.id === edge.to)) {
+          openSet.push({ id: edge.to, fScore: fScore[edge.to] });
+        }
+      }
+    }
+  }
+
+  return null; // No path found
+}
+
+// ─── A* Route Map Visualizer ─────────────────────────────────────────────────
+function AStarRouteMap({ result, fromNode, toNode }: { result: AStarResult; fromNode: RoadNode; toNode: RoadNode }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapObj = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; }
+
+    const allLats = result.path.map(n => n.lat);
+    const allLngs = result.path.map(n => n.lng);
+    const centerLat = (Math.min(...allLats) + Math.max(...allLats)) / 2;
+    const centerLng = (Math.min(...allLngs) + Math.max(...allLngs)) / 2;
+
+    const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false })
+      .setView([centerLat, centerLng], 14);
+    mapObj.current = map;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(map);
+
+    // Draw the A* computed route polyline
+    const routeCoords: [number, number][] = result.path.map(n => [n.lat, n.lng]);
+    L.polyline(routeCoords, { color: "#3B82F6", weight: 5, opacity: 0.85, dashArray: undefined }).addTo(map);
+
+    // Start marker (green)
+    const startIcon = L.divIcon({ className: "", iconSize: [32, 32], iconAnchor: [16, 16],
+      html: `<div style="width:32px;height:32px;border-radius:50%;background:#22C55E;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:14px">🚶</div>` });
+    L.marker([fromNode.lat, fromNode.lng], { icon: startIcon }).addTo(map)
+      .bindPopup(`<b>🟢 Start: ${fromNode.name}</b>`).openPopup();
+
+    // End marker (red)
+    const endIcon = L.divIcon({ className: "", iconSize: [32, 32], iconAnchor: [16, 16],
+      html: `<div style="width:32px;height:32px;border-radius:50%;background:#EF4444;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:14px">🏁</div>` });
+    L.marker([toNode.lat, toNode.lng], { icon: endIcon }).addTo(map)
+      .bindPopup(`<b>🔴 Destination: ${toNode.name}</b>`);
+
+    // Intermediate node markers
+    result.path.slice(1, -1).forEach((node, i) => {
+      const stepIcon = L.divIcon({ className: "", iconSize: [24, 24], iconAnchor: [12, 12],
+        html: `<div style="width:24px;height:24px;border-radius:50%;background:#3B82F6;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900">${i + 1}</div>` });
+      L.marker([node.lat, node.lng], { icon: stepIcon }).addTo(map)
+        .bindPopup(`<b>${i + 1}. ${node.name}</b><br/><small>via ${result.roads[i + 1]}</small>`);
+    });
+
+    // Fit map bounds to path
+    map.fitBounds(L.polyline(routeCoords).getBounds(), { padding: [30, 30] });
+
+    return () => { if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; } };
+  }, [result, fromNode, toNode]);
+
+  return <div ref={mapRef} style={{ height: 240, borderRadius: "1rem", overflow: "hidden", border: "1px solid #E4E4E7" }} />;
+}
+
+// ─── 7. Smart Route Screen — A* Algorithm ─────────────────────────────────────
 function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  const [fromId, setFromId] = useState("rpd");
+  const [toId, setToId] = useState("college");
+  const [result, setResult] = useState<AStarResult | null>(null);
+  const [computing, setComputing] = useState(false);
+  const [steps, setSteps] = useState<string[]>([]);
+  const [showSteps, setShowSteps] = useState(false);
+
+  const nodeList = BELAGAVI_NODES;
+  const nodes = Object.fromEntries(BELAGAVI_NODES.map(n => [n.id, n]));
+
+  const compute = () => {
+    if (fromId === toId) { toast.error("Start and destination must be different!"); return; }
+    setComputing(true);
+    setResult(null);
+    setSteps([]);
+
+    // Simulate step-by-step A* exploration for visualization
+    setTimeout(() => {
+      const r = runAStar(fromId, toId);
+      setResult(r);
+
+      if (r) {
+        const stepLog: string[] = [
+          `🟢 Start: ${nodes[fromId].name}`,
+          `🎯 Goal: ${nodes[toId].name}`,
+          `📐 Heuristic (h): Haversine straight-line = ${haversine(nodes[fromId], nodes[toId]).toFixed(2)} km`,
+          `⚙️ A* opened ${r.nodesExplored} node(s) from priority queue`,
+          ...r.path.map((n, i) => i === 0
+            ? `  ✅ [0] Node: ${n.name} → f=0+h, enqueue`
+            : `  ✅ [${i}] Via "${r.roads[i - 1]}" → ${n.name}`
+          ),
+          `🏁 Path reconstructed via parent pointers`,
+          `📏 Total road cost g(goal) = ${r.totalKm} km`,
+          r.avoided.length > 0 ? `⚠️ Avoided congested: ${r.avoided.join(", ")}` : `✨ No heavy congestion on path`,
+        ];
+        setSteps(stepLog);
+        toast.success(`✅ A* found optimal route in ${r.totalMins} min!`);
+      } else {
+        toast.error("No route found between selected nodes.");
+      }
+      setComputing(false);
+    }, 600);
+  };
+
+  const congestionColor = (level: string) =>
+    level === "Heavy Traffic" ? "text-red-600 bg-red-50 border-red-200" :
+    level === "Moderate" ? "text-orange-600 bg-orange-50 border-orange-200" :
+    "text-emerald-600 bg-emerald-50 border-emerald-200";
+
   return (
-    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-4 pt-10 bg-white">
+      {/* Header */}
       <div className="mb-4">
-        <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Safe Navigation</p>
-        <h2 className="text-[22px] font-black text-black">Smart Route Finder</h2>
+        <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">A* Pathfinding Algorithm</p>
+        <h2 className="text-[22px] font-black text-black leading-tight">Smart Route Finder</h2>
+        <p className="text-[11px] text-zinc-400 mt-0.5">Real A* on Belagavi road graph with live congestion</p>
       </div>
-      <div className="space-y-3 mb-6">
-        <div className="input-field p-3.5 flex items-center gap-3">
-          <MapPin size={16} className="text-blue-500 shrink-0" />
-          <input placeholder="Starting Point (My Live Location)" defaultValue="My Live GPS Location" className="bg-transparent text-xs font-bold outline-none flex-1 text-black" />
+
+      {/* Node Pickers */}
+      <div className="space-y-2.5 mb-4">
+        <div>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🟢 Start Node</label>
+          <select value={fromId} onChange={e => setFromId(e.target.value)}
+            className="w-full input-field px-3 py-2.5 text-xs font-bold text-black outline-none appearance-none">
+            {nodeList.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+          </select>
         </div>
-        <div className="input-field p-3.5 flex items-center gap-3">
-          <Navigation2 size={16} className="text-emerald-500 shrink-0" />
-          <input placeholder="Enter Destination..." className="bg-transparent text-xs font-bold outline-none flex-1 text-black" />
+        <div>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🔴 Destination Node</label>
+          <select value={toId} onChange={e => setToId(e.target.value)}
+            className="w-full input-field px-3 py-2.5 text-xs font-bold text-black outline-none appearance-none">
+            {nodeList.filter(n => n.id !== fromId).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+          </select>
         </div>
       </div>
-      <div className="card p-4 border border-zinc-100 mb-4">
-        <span className="text-[11px] font-bold text-zinc-400 uppercase">Recommended Safe Route</span>
-        <div className="text-[16px] font-extrabold text-black mt-1">Via Khanapur Bypass (Clear)</div>
-        <div className="text-xs text-zinc-500 mt-0.5">Avoids RPD Cross collision — 4.2 km · 11 mins</div>
-      </div>
-      <button onClick={() => setTab("map")} className="btn-primary w-full py-3.5 text-xs font-bold">
-        Open in Full Interactive Map
+
+      {/* Compute Button */}
+      <button onClick={compute} disabled={computing}
+        className="btn-primary w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 mb-4">
+        {computing ? (
+          <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Computing A* Route...</>
+        ) : (
+          <><Cpu size={14} /> Run A* Algorithm</>
+        )}
       </button>
+
+      {/* Results */}
+      {result && (
+        <div className="space-y-3 animate-fade-in">
+          {/* Stats Row */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "Distance", value: `${result.totalKm} km`, icon: "📏" },
+              { label: "Est. Time", value: `${result.totalMins} min`, icon: "⏱️" },
+              { label: "Nodes", value: `${result.nodesExplored} opened`, icon: "🔍" },
+            ].map(s => (
+              <div key={s.label} className="card p-3 text-center border-zinc-100">
+                <div className="text-base">{s.icon}</div>
+                <div className="text-[13px] font-black text-black">{s.value}</div>
+                <div className="text-[9px] text-zinc-400 font-semibold uppercase">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Congestion badge */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold ${congestionColor(result.congestionLevel)}`}>
+            <span>🚦</span>
+            <span>Road Condition: {result.congestionLevel}</span>
+          </div>
+
+          {/* Avoided roads */}
+          {result.avoided.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-[10px] font-black text-red-600 uppercase tracking-wider mb-1">⚠️ A* Avoided (Congestion &gt; 1.7×)</p>
+              {result.avoided.map((a, i) => <p key={i} className="text-[10px] text-red-500">{a}</p>)}
+            </div>
+          )}
+
+          {/* Route Map */}
+          <div>
+            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-1.5">🗺️ Computed Route on Map</p>
+            <AStarRouteMap result={result} fromNode={nodes[fromId]} toNode={nodes[toId]} />
+          </div>
+
+          {/* Turn-by-Turn Directions */}
+          <div className="card border-zinc-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-100 flex justify-between items-center">
+              <p className="text-xs font-black text-black">Turn-by-Turn Directions</p>
+              <span className="text-[10px] text-zinc-400">{result.path.length - 1} turns</span>
+            </div>
+            {result.path.map((node, i) => (
+              <div key={node.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-50 last:border-0">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                  i === 0 ? "bg-emerald-500 text-white" :
+                  i === result.path.length - 1 ? "bg-red-500 text-white" :
+                  "bg-blue-100 text-blue-600"
+                }`}>{i === 0 ? "S" : i === result.path.length - 1 ? "🏁" : i}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-bold text-black truncate">{node.name}</p>
+                  {result.roads[i] && <p className="text-[10px] text-zinc-400">via {result.roads[i]}</p>}
+                </div>
+                {i < result.path.length - 1 && (
+                  <Navigation2 size={12} className="text-zinc-300 shrink-0" />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* A* Step Log — educational trace */}
+          <div className="card border-zinc-100">
+            <button onClick={() => setShowSteps(!showSteps)}
+              className="w-full px-4 py-3 flex justify-between items-center">
+              <p className="text-xs font-black text-black">🔬 A* Exploration Trace</p>
+              <ChevronDown size={14} className={`text-zinc-400 transition-transform ${showSteps ? "rotate-180" : ""}`} />
+            </button>
+            {showSteps && (
+              <div className="border-t border-zinc-100 px-4 py-3 space-y-1 bg-zinc-50 rounded-b-2xl font-mono">
+                {steps.map((s, i) => (
+                  <p key={i} className="text-[9.5px] text-zinc-600 leading-relaxed">{s}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
