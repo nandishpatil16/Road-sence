@@ -491,14 +491,49 @@ function ReportsScreen({ setTab }: { setTab: (t: MainTab) => void }) {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 15 * 1024 * 1024) {
-      toast.error("Image size must be less than 15MB");
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("Image size must be less than 20MB");
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
-      setImageBase64(reader.result as string);
-      toast.success("📷 Photo attached!");
+    reader.onload = (event) => {
+      const rawData = event.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        // High-efficiency memory compression: scale down to 900px max
+        const maxDim = 900;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.65);
+          setImageBase64(compressed);
+          toast.success("📷 Photo compressed & attached!");
+        } else {
+          setImageBase64(rawData);
+          toast.success("📷 Photo attached!");
+        }
+      };
+      img.onerror = () => {
+        setImageBase64(rawData);
+        toast.success("📷 Photo attached!");
+      };
+      img.src = rawData;
     };
     reader.readAsDataURL(file);
   };
