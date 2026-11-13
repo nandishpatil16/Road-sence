@@ -1,7 +1,23 @@
 // ─── CivicConnect Dynamic API Service ─────────────────────────────────────────
 const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-export const API_BASE = (import.meta as any).env?.VITE_API_BASE || (isLocalDev && window.location.port === '8080' ? 'http://localhost:5000/api' : '/api');
-export const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (isLocalDev && window.location.port === '8080' ? 'http://localhost:5000' : (typeof window !== 'undefined' ? window.location.origin : ''));
+const isRenderUnified = typeof window !== 'undefined' && window.location.hostname.endsWith('onrender.com');
+const defaultProductionBackend = 'https://road-sence.onrender.com';
+
+export const API_BASE = (import.meta as any).env?.VITE_API_BASE || (
+  isLocalDev && window.location.port === '8080'
+    ? 'http://localhost:5000/api'
+    : isRenderUnified
+    ? '/api'
+    : `${defaultProductionBackend}/api`
+);
+
+export const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || (
+  isLocalDev && window.location.port === '8080'
+    ? 'http://localhost:5000'
+    : isRenderUnified
+    ? (typeof window !== 'undefined' ? window.location.origin : '')
+    : defaultProductionBackend
+);
 
 class ApiService {
   private token: string | null = localStorage.getItem("cc_token");
