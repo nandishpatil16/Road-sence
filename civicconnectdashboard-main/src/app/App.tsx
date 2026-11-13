@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Toaster, toast } from 'sonner';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginPage } from './components/LoginPage';
+import { InstallPwaPrompt } from './components/InstallPwaPrompt';
 import { api } from '../api';
 
 // Role-based dashboards
@@ -31,14 +32,6 @@ export default function App() {
     toast.success('Logged out successfully');
   };
 
-  if (appState === 'splash') {
-    return <SplashScreen onComplete={handleSplashComplete} />;
-  }
-
-  if (appState === 'login') {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
   // Render role-based dashboard
   const renderDashboard = () => {
     switch (userRole) {
@@ -59,8 +52,11 @@ export default function App() {
 
   return (
     <>
+      <InstallPwaPrompt />
       <div className="fixed inset-0 bg-white overflow-hidden">
-        {renderDashboard()}
+        {appState === 'splash' && <SplashScreen onComplete={handleSplashComplete} />}
+        {appState === 'login' && <LoginPage onLogin={handleLogin} />}
+        {appState === 'main' && renderDashboard()}
       </div>
       <Toaster position="top-center" richColors />
     </>

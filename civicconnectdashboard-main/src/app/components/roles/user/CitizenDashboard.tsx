@@ -1243,6 +1243,25 @@ function ProfileScreen({ onLogout }: { onLogout?: () => void }) {
       </div>
 
       <div className="space-y-3 mb-6">
+        <div
+          onClick={() => {
+            sessionStorage.removeItem('cc_pwa_dismissed');
+            window.location.reload();
+          }}
+          className="card p-4 border border-orange-100 bg-orange-50/50 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all hover:bg-orange-50"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">📲</span>
+            <div>
+              <p className="text-xs font-bold text-black">Download Mobile App</p>
+              <p className="text-[11px] text-gray-500">Install to your phone home screen</p>
+            </div>
+          </div>
+          <span className="text-xs font-black text-orange-700 bg-orange-200/80 px-3 py-1 rounded-xl">
+            Install PWA
+          </span>
+        </div>
+
         <div className="card p-4 border border-zinc-100 flex items-center justify-between">
           <span className="text-xs font-bold text-black">Emergency Contact</span>
           <span className="text-xs text-zinc-500 font-mono">112 (Police) / 108 (Ambulance)</span>
