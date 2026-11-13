@@ -449,7 +449,7 @@ export function PoliceDashboard({ onLogout }: PoliceDashboardProps) {
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'map': return <MapPage />;
+      case 'map': return <MapPage incidents={incidents} onSelectIncident={setSelectedIncident} onResolve={handleResolve} />;
       case 'alerts': return <AlertsPage />;
       case 'cases': return renderCasesPage();
       case 'profile': return <ProfilePage onLogout={onLogout} />;
