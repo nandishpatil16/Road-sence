@@ -371,7 +371,7 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
         <div className="p-4 pt-14 pb-28">
           <div className="flex justify-between items-center mb-1">
             <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-orange-600 block">Belagavi Municipal PWD</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-orange-600 block">Public Works Department</span>
               <h2 className="text-2xl font-black text-black">Construction Zones</h2>
             </div>
             <button
@@ -452,7 +452,7 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
                 <div className="bg-gray-50 border border-gray-200/70 rounded-2xl p-4 text-center">
                   <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
                   <p className="text-xs font-bold text-black">No Active Road Closures</p>
-                  <p className="text-[11px] text-gray-400">All major roads in Belagavi are currently open.</p>
+                  <p className="text-[11px] text-gray-400">All monitored roads are currently open.</p>
                 </div>
               )}
             </div>
@@ -689,9 +689,14 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
         {/* Compact Sticky Top Bar */}
         <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 py-3 shadow-xs">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-black text-black">Construction Control</h1>
-              <p className="text-[11px] text-gray-400 font-medium">Belagavi Roads & Infrastructure Authority</p>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center text-white shadow-sm shrink-0">
+                <span className="text-lg">🚧</span>
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-black tracking-tight">Construction Authority</h1>
+                <p className="text-[11px] text-gray-400 font-medium">Infrastructure & Road Works</p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setPage('reports')} className="relative p-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors" title="Reports">
@@ -747,7 +752,7 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
             <div className="flex justify-between items-center mb-2">
               <h3 className="font-bold text-black flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-orange-500" />
-                Belagavi Grid Map
+                Road & Zone Map
               </h3>
               <button onClick={() => setPage('map')} className="text-xs font-bold text-black flex items-center gap-1">
                 Full Map <ArrowRight className="w-3 h-3" />

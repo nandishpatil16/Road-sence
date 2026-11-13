@@ -698,14 +698,18 @@ function ReportsScreen({ setTab }: { setTab: (t: MainTab) => void }) {
       </div>
 
       {/* Notes / Details */}
-      <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-2">Details (Optional)</p>
-      <textarea
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Add details, landmarks, or vehicle numbers..."
-        rows={2}
-        className="w-full input-field px-4 py-3 text-[13px] text-black placeholder:text-zinc-400 outline-none resize-none mb-6 font-medium"
-      />
+      <div className="mb-6">
+        <label className="text-[11px] font-black uppercase tracking-wider text-zinc-400 block mb-2">
+          Details (Optional)
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Add details, landmarks, or vehicle numbers..."
+          rows={4}
+          className="w-full bg-zinc-50 border border-zinc-200 focus:border-black focus:bg-white rounded-2xl p-4 text-[13px] text-black placeholder:text-zinc-400 outline-none resize-none min-h-[110px] font-medium transition-all shadow-inner/10"
+        />
+      </div>
 
       {/* Submit Button */}
       <button onClick={handleSubmit} disabled={loading || !liveLocation} className="btn-primary w-full py-4 text-[14px] disabled:opacity-50">
@@ -1162,7 +1166,22 @@ function TrackReportScreen({ setTab }: { setTab: (t: MainTab) => void }) {
 
 // ─── 9. Profile Screen ────────────────────────────────────────────────────────
 function ProfileScreen({ onLogout }: { onLogout?: () => void }) {
-  const user = api.getUser();
+  const [currentUser, setCurrentUser] = useState(() => api.getUser());
+  const [name, setName] = useState(currentUser?.name || "Citizen");
+  const [isEditing, setIsEditing] = useState(false);
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+    const updated = { ...(currentUser || {}), name: name.trim() };
+    api.setUser(updated);
+    setCurrentUser(updated);
+    setIsEditing(false);
+    toast.success("Profile name updated successfully!");
+  };
+
   const handleLogout = () => {
     if (onLogout) {
       onLogout();
@@ -1176,10 +1195,48 @@ function ProfileScreen({ onLogout }: { onLogout?: () => void }) {
     <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
       <div className="text-center mb-6">
         <div className="w-20 h-20 bg-black text-white rounded-full flex items-center justify-center text-2xl font-black mx-auto mb-3 shadow-md">
-          {user?.name?.charAt(0).toUpperCase() || "C"}
+          {name.charAt(0).toUpperCase()}
         </div>
-        <h2 className="text-[20px] font-black text-black">{user?.name || "Citizen"}</h2>
-        <p className="text-[12px] text-zinc-400">{user?.email}</p>
+
+        {isEditing ? (
+          <div className="flex flex-col items-center gap-2 max-w-xs mx-auto mb-2">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full text-center px-4 py-2 text-lg font-bold border border-zinc-300 rounded-xl focus:border-black outline-none"
+              placeholder="Enter your name"
+              autoFocus
+            />
+            <div className="flex gap-2 w-full">
+              <button
+                onClick={handleSave}
+                className="flex-1 py-1.5 bg-black text-white rounded-xl text-xs font-bold"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => { setName(currentUser?.name || "Citizen"); setIsEditing(false); }}
+                className="flex-1 py-1.5 bg-zinc-100 text-zinc-600 rounded-xl text-xs font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <h2 className="text-[20px] font-black text-black">{name}</h2>
+            <button
+              onClick={() => setIsEditing(true)}
+              className="p-1 text-zinc-400 hover:text-black transition-colors"
+              title="Edit Name"
+            >
+              <span className="text-sm">✏️</span>
+            </button>
+          </div>
+        )}
+
+        <p className="text-[12px] text-zinc-400">{currentUser?.email || "citizen@civic.com"}</p>
         <span className="inline-block mt-2 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold rounded-full">
           🛡️ Verified Citizen
         </span>

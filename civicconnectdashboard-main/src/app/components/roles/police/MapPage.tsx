@@ -320,7 +320,7 @@ export function MapPage({ incidents: propIncidents, onSelectIncident, onResolve 
             });
             userMarkerRef.current = L.marker([lat, lng], { icon: officerIcon })
               .addTo(mapInstance.current)
-              .bindPopup('<b>👮 Your Patrol Location</b><br/>Belagavi Traffic Police');
+              .bindPopup('<b>👮 Your Patrol Location</b><br/>Police Authority');
           }
         }
         setGpsLoading(false);
@@ -433,7 +433,7 @@ export function MapPage({ incidents: propIncidents, onSelectIncident, onResolve 
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search Belagavi roads, incidents, landmarks..."
+              placeholder="Search roads, incidents, landmarks..."
               className="w-full bg-transparent pl-10 pr-4 py-3 text-xs text-black placeholder-gray-400 focus:outline-none font-medium"
             />
             {searchQuery && (
@@ -494,7 +494,7 @@ export function MapPage({ incidents: propIncidents, onSelectIncident, onResolve 
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
           <span className="text-[10px] font-black text-gray-800 uppercase tracking-wider">
-            Belagavi Traffic Grid Live
+            Traffic Grid Live
           </span>
         </div>
       </div>

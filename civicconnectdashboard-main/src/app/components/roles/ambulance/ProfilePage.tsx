@@ -1,4 +1,5 @@
-import { User, Mail, Phone, MapPin, Heart, LogOut, Settings, Bell, Award } from 'lucide-react';
+import { useState } from 'react';
+import { User, Mail, Phone, MapPin, Heart, LogOut, Settings, Bell, Award, Edit3, Check, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { api } from '../../../../api';
@@ -8,10 +9,26 @@ interface ProfilePageProps {
 }
 
 export function ProfilePage({ onLogout }: ProfilePageProps) {
-  const user = api.getUser();
-  const userName = user?.name || 'Dr. Priya Sharma';
-  const userEmail = user?.email || 'ambulance@civic.com';
-  const userBadge = user?.badge || 'AMB-007';
+  const [currentUser, setCurrentUser] = useState(() => api.getUser());
+  const [name, setName] = useState(currentUser?.name || 'Dr. Priya Sharma');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editVal, setEditVal] = useState(name);
+
+  const userEmail = currentUser?.email || 'ambulance@civic.com';
+  const userBadge = currentUser?.badge || 'AMB-007';
+
+  const handleSaveName = () => {
+    if (!editVal.trim()) {
+      toast.error('Name cannot be empty');
+      return;
+    }
+    const updated = { ...(currentUser || {}), name: editVal.trim() };
+    api.setUser(updated);
+    setCurrentUser(updated);
+    setName(editVal.trim());
+    setIsEditing(false);
+    toast.success('Paramedic profile name updated successfully!');
+  };
 
   const handleLogoutClick = () => {
     if (onLogout) {
@@ -39,17 +56,55 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
 
         {/* Profile Card */}
         <div className="bg-white rounded-2xl p-6 -mb-12 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center text-white text-2xl font-black">
-              {userName.charAt(0)}
+          <div className="flex items-start gap-4 mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center text-white text-2xl font-black shrink-0 shadow-md">
+              {name.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <h3 className="text-xl font-bold text-black">{userName}</h3>
-              <p className="text-sm text-gray-500">Emergency Medical Services</p>
-              <div className="flex items-center gap-1 mt-1">
-                <Heart className="w-4 h-4 text-red-600" />
-                <span className="text-xs text-red-600 font-bold">Paramedic #{userBadge}</span>
-              </div>
+            <div className="flex-1 min-w-0">
+              {isEditing ? (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={editVal}
+                    onChange={(e) => setEditVal(e.target.value)}
+                    className="w-full px-3 py-1.5 text-base font-bold text-black border border-red-300 focus:border-red-600 rounded-xl outline-none"
+                    placeholder="Enter paramedic name"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveName}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Save
+                    </button>
+                    <button
+                      onClick={() => { setEditVal(name); setIsEditing(false); }}
+                      className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium flex items-center gap-1"
+                    >
+                      <X className="w-3.5 h-3.5" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-black truncate">{name}</h3>
+                    <button
+                      onClick={() => { setEditVal(name); setIsEditing(true); }}
+                      className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Edit Name"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-500">Emergency Medical Services</p>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Heart className="w-4 h-4 text-red-600" />
+                    <span className="text-xs text-red-600 font-bold">Paramedic #{userBadge}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -64,7 +119,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
             </div>
             <div className="flex items-center gap-3 text-sm">
               <MapPin className="w-5 h-5 text-gray-400" />
-              <span className="text-gray-700 font-medium">District Hospital & EMS Belagavi</span>
+              <span className="text-gray-700 font-medium">District Central Hospital & EMS Base</span>
             </div>
           </div>
         </div>

@@ -418,7 +418,7 @@ export function PoliceDashboard({ onLogout }: PoliceDashboardProps) {
                       </div>
                       <p className="text-xs text-gray-500 flex items-center gap-1 truncate mb-2">
                         <MapPin className="w-3 h-3 text-gray-400" />
-                        {inc.location?.address || 'Belagavi Grid'}
+                        {inc.location?.address || 'Incident Location'}
                       </p>
                       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
                         <button
@@ -459,12 +459,14 @@ export function PoliceDashboard({ onLogout }: PoliceDashboardProps) {
             {/* Professional Header */}
             <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 p-4 shadow-xs">
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">🚔</span>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                    <span className="text-xl">🚔</span>
+                  </div>
                   <div>
-                    <span className="text-[11px] font-black uppercase tracking-wider text-blue-600 block">Belagavi Traffic Police</span>
-                    <span className="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Command & Dispatch
+                    <h1 className="text-xl font-black text-black tracking-tight">Police Authority</h1>
+                    <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Traffic Enforcement & Emergency Dispatch
                     </span>
                   </div>
                 </div>
@@ -496,21 +498,17 @@ export function PoliceDashboard({ onLogout }: PoliceDashboardProps) {
                   </button>
                 </div>
               </div>
-              <div>
-                <div className="text-xs text-gray-400 mb-0.5 uppercase tracking-wide">{greeting}</div>
-                <h1 className="text-2xl font-bold text-black mb-3">{user?.name || 'Officer'}</h1>
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search incidents, road hazards..."
-                    className="w-full bg-gray-50 border-0 rounded-2xl pl-11 pr-11 py-3 text-sm text-black placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black"
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 bg-black rounded-lg flex items-center justify-center">
-                    <Scan className="w-3.5 h-3.5 text-white" />
-                  </div>
+              <div className="relative mt-2">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search incidents, road hazards..."
+                  className="w-full bg-gray-50 border-0 rounded-2xl pl-11 pr-11 py-3 text-sm text-black placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 bg-black rounded-lg flex items-center justify-center">
+                  <Scan className="w-3.5 h-3.5 text-white" />
                 </div>
               </div>
             </div>
