@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd civicconnectdashboard-main && npm install && npm run build",
+  "outputDirectory": "civicconnectdashboard-main/dist",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
