@@ -1,0 +1,1062 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { api, SOCKET_URL } from "../../../../api";
+import { io as socketIO } from "socket.io-client";
+import {
+  AlertTriangle, AlertCircle, Bell, Car, MapPin, Navigation2, Map as MapIcon,
+  User, Shield, Search, Phone, Mail, Lock, Eye, EyeOff,
+  ChevronRight, Home, FileText, ClipboardList, Zap,
+  Check, Camera, Upload, Star, TrendingUp, Activity, Brain,
+  LogOut, Globe, Sun, Moon, Layers, Clock, Navigation,
+  Route, Cpu, Radio, CheckCircle2, ChevronDown, Fingerprint, RefreshCcw, X
+} from "lucide-react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { toast } from "sonner";
+
+// ─── Main Tab Type ────────────────────────────────────────────────────────────
+type MainTab = "home" | "map" | "alerts" | "reports" | "profile" | "ai" | "emergency" | "route" | "track";
+type MapLayer = "traffic" | "accidents" | "parking";
+
+const QUICK_ACTIONS = [
+  { id: "report",    label: "Report Issue",    Icon: AlertTriangle, bg: "#FEF2F2", color: "#EF4444" },
+  { id: "ai",        label: "AI Prediction",   Icon: Brain,         bg: "#F5F3FF", color: "#7C3AED" },
+  { id: "emergency", label: "Emergency SOS",   Icon: Shield,        bg: "#FFF1F2", color: "#E11D48" },
+  { id: "alerts",    label: "Live Alerts",     Icon: Radio,         bg: "#EFF6FF", color: "#2563EB" },
+  { id: "route",     label: "Smart Route",     Icon: Route,         bg: "#F0F9FF", color: "#0284C7" },
+  { id: "track",     label: "Track Report",    Icon: ClipboardList, bg: "#F5F3FF", color: "#6D28D9" },
+];
+
+const REPORT_TYPES = [
+  { id: "accident",        label: "Accident",          icon: AlertTriangle, color: "#EF4444", bg: "#FEF2F2", authority: "Traffic Police & Emergency" },
+  { id: "traffic_jam",     label: "Traffic Jam",       icon: Car,           color: "#F97316", bg: "#FFF7ED", authority: "Traffic Police" },
+  { id: "pothole",         label: "Pothole",           icon: AlertCircle,   color: "#92400E", bg: "#FEF3C7", authority: "Public Works (PWD)" },
+  { id: "road_damage",     label: "Road Damage",       icon: Layers,        color: "#52525B", bg: "#F4F4F5", authority: "Construction Authority" },
+  { id: "waterlogging",    label: "Waterlogging",      icon: Navigation,    color: "#0284C7", bg: "#EFF6FF", authority: "Drainage & Municipal PWD" },
+  { id: "illegal_parking", label: "Illegal Parking",   icon: Car,           color: "#F97316", bg: "#FFF7ED", authority: "Traffic Enforcement Police" },
+];
+
+// ─── Inline CSS ───────────────────────────────────────────────────────────────
+const Css = () => (
+  <style>{`
+    @keyframes floatUp { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+    @keyframes locPulse { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(2.5);opacity:0} }
+    @keyframes slideUp { from{transform:translateY(24px);opacity:0} to{transform:translateY(0);opacity:1} }
+    @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+    @keyframes spin    { to{transform:rotate(360deg)} }
+    .animate-float     { animation: floatUp 3s ease-in-out infinite; }
+    .animate-slide-up  { animation: slideUp 0.4s ease-out forwards; }
+    .animate-fade-in   { animation: fadeIn 0.35s ease-out forwards; }
+    .animate-spin-slow { animation: spin 0.8s linear infinite; }
+    .no-scrollbar      { scrollbar-width:none; -ms-overflow-style:none; }
+    .no-scrollbar::-webkit-scrollbar { display:none; }
+    .card       { background:#fff; border:1px solid #F4F4F5; border-radius:1rem; }
+    .card-hover:hover { background:#FAFAFA; }
+    .input-field { background:#F9F9FA; border:1px solid #F0F0F1; border-radius:0.875rem; }
+    .input-field:focus-within { border-color:#000; }
+    .btn-primary  { background:#000; color:#fff; border-radius:0.875rem; font-weight:700; transition:background .15s,transform .1s; }
+    .btn-primary:hover  { background:#111; }
+    .btn-primary:active { transform:scale(0.98); }
+    .btn-secondary  { background:#F4F4F5; border-radius:0.875rem; color:#000; font-weight:600; transition:background .15s,transform .1s; }
+    .btn-secondary:hover  { background:#EBEBEC; }
+    .btn-secondary:active { transform:scale(0.98); }
+    .leaflet-popup-content-wrapper { border-radius:12px !important; box-shadow:0 4px 20px rgba(0,0,0,0.12) !important; }
+    .leaflet-popup-tip { display:none; }
+    .leaflet-popup-close-button { display:none !important; }
+  `}</style>
+);
+
+// ─── Leaflet Map Component (Belagavi Traffic + Live GPS + Real Incidents) ──────
+function CityMapLeaflet({ full = false, layer = "traffic" }: { full?: boolean; layer?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const mapObj = useRef<L.Map | null>(null);
+  const locMk = useRef<L.Marker | null>(null);
+  const locCr = useRef<L.Circle | null>(null);
+  const wId = useRef<number | null>(null);
+  const hf = useRef(false);
+  const [liveCoords, setLiveCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const h = full ? "100%" : 280;
+
+  const locIcon = L.divIcon({
+    className: "",
+    html: '<div style="position:relative;width:28px;height:28px"><div style="position:absolute;inset:0;border-radius:50%;background:rgba(59,130,246,0.22);animation:locPulse 2s ease-out infinite"></div><div style="position:absolute;top:6px;left:6px;width:16px;height:16px;border-radius:50%;background:#3B82F6;border:3px solid #fff;box-shadow:0 2px 8px rgba(59,130,246,0.5)"></div></div>',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; }
+    hf.current = false;
+
+    const map = L.map(ref.current, {
+      center: [15.85, 74.50],
+      zoom: full ? 14 : 13,
+      zoomControl: false,
+      attributionControl: false,
+    });
+    mapObj.current = map;
+
+    // Google Maps-styled OpenStreetMap tile layer
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(map);
+
+    // Belagavi Traffic Zones
+    const zones = [
+      { lat: 15.8497, lng: 74.4977, l: "RPD Cross — Heavy Traffic", c: "#EF4444", r: 250 },
+      { lat: 15.8440, lng: 74.5040, l: "College Road — Moderate",    c: "#F97316", r: 200 },
+      { lat: 15.8525, lng: 74.5085, l: "Bogarves — Moderate",        c: "#FBBF24", r: 180 },
+      { lat: 15.8520, lng: 74.5020, l: "Rani Channamma — Heavy",     c: "#EF4444", r: 220 },
+      { lat: 15.8560, lng: 74.5000, l: "Kirloskar Road — Light",     c: "#22C55E", r: 180 },
+      { lat: 15.8380, lng: 74.4950, l: "Angol — Light",              c: "#22C55E", r: 200 },
+      { lat: 15.8600, lng: 74.4900, l: "Khanapur Rd — Light",        c: "#22C55E", r: 170 },
+    ];
+    if (layer === "traffic") {
+      zones.forEach(z => {
+        L.circle([z.lat, z.lng], { radius: z.r, color: z.c, fillColor: z.c, fillOpacity: 0.18, weight: 2.5 })
+          .addTo(map)
+          .bindPopup(`<b>🚦 ${z.l}</b>`);
+      });
+    }
+
+    // Real Incidents and Road Blocks from MongoDB
+    api.getIncidents().then((data: any) => {
+      const list = Array.isArray(data) ? data : data.incidents || data.data || [];
+      const typeIcons: Record<string, string> = { accident: '🚗', traffic_jam: '🚦', pothole: '🕳️', road_damage: '🚧', construction: '🚧', waterlogging: '🌊', illegal_parking: '🅿️' };
+      list.forEach((inc: any) => {
+        if (!inc.location?.lat || !inc.location?.lng) return;
+        const isSolved = inc.status === 'resolved' || inc.status === 'closed';
+        const isConstruction = inc.type === 'construction' || inc.tags?.includes('road_block') || inc.title?.toLowerCase().includes('road block') || inc.title?.toLowerCase().includes('construction');
+
+        const color = isSolved ? '#6B7280' : isConstruction ? '#EA580C' : inc.priority === 'critical' || inc.priority === 'high' ? '#EF4444' : '#F97316';
+        const emoji = isSolved ? '✅' : isConstruction ? '🚧' : (typeIcons[inc.type] || '📍');
+
+        // Draw Road Block Closure Zone on Map if active construction / road block
+        if (isConstruction && !isSolved) {
+          L.circle([inc.location.lat, inc.location.lng], {
+            radius: 200,
+            color: '#EA580C',
+            fillColor: '#F97316',
+            fillOpacity: 0.22,
+            weight: 2.5,
+            dashArray: '6, 6'
+          }).addTo(map).bindPopup(`<b>🚧 Construction Road Block</b><br/>${inc.title || ''}<br/><small>Diversion in effect</small>`);
+        }
+
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="width:34px;height:34px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer">${emoji}</div>`,
+          iconSize: [34, 34],
+          iconAnchor: [17, 17],
+        });
+
+        const marker = L.marker([inc.location.lat, inc.location.lng], { icon }).addTo(map);
+        const photoHtml = inc.images?.[0] ? `<img src="${inc.images[0]}" style="width:100%;height:85px;object-fit:cover;border-radius:8px;margin-bottom:6px;"/>` : '';
+        
+        if (isConstruction) {
+          marker.bindPopup(`
+            <div style="font-family:'DM Sans',sans-serif;min-width:180px;padding:2px;">
+              ${photoHtml}
+              <div style="background:#FFF7ED;border:1px solid #FED7AA;color:#C2410C;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:800;margin-bottom:6px;display:inline-block">🚧 ROAD BLOCK / DIVERSION</div>
+              <div style="font-weight:700;font-size:13px;color:#111;">${inc.title || 'Road Work in Progress'}</div>
+              <div style="font-size:11px;color:#666;margin:4px 0;">📍 ${inc.location?.address || 'Belagavi Road'}</div>
+              <div style="font-size:11px;color:#EA580C;font-weight:600;margin-top:4px;">⚠️ Road blocked by Construction Authority. Follow detours.</div>
+            </div>
+          `);
+        } else {
+          marker.bindPopup(`
+            <div style="font-family:'DM Sans',sans-serif;min-width:160px;padding:2px;">
+              ${photoHtml}
+              <div style="font-weight:700;font-size:13px;color:#111;">${inc.title || inc.type}</div>
+              <div style="font-size:11px;color:#666;margin:2px 0;">📍 ${inc.location?.address || 'Location on map'}</div>
+              <div style="font-size:10px;font-weight:700;color:${color}">${(inc.priority || 'MEDIUM').toUpperCase()} ${isSolved ? '• SOLVED' : ''}</div>
+            </div>
+          `);
+        }
+      });
+    }).catch(() => {});
+
+    // Also fetch Live Alerts from Construction Authority & Municipal Services
+    api.getAlerts().then((alertList: any[]) => {
+      if (!Array.isArray(alertList)) return;
+      alertList.forEach(al => {
+        if (!al.location?.lat || !al.location?.lng || al.isResolved) return;
+        const isRoadBlock = al.title?.toLowerCase().includes('road block') || al.type === 'traffic';
+        const aIcon = L.divIcon({
+          className: '',
+          html: `<div style="width:30px;height:30px;border-radius:50%;background:#EA580C;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer">⚠️</div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+        L.marker([al.location.lat, al.location.lng], { icon: aIcon }).addTo(map).bindPopup(`
+          <div style="font-family:'DM Sans',sans-serif;min-width:160px;">
+            <div style="background:#FEF2F2;border:1px solid #FEE2E2;color:#DC2626;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:800;margin-bottom:4px;display:inline-block">LIVE ALERT</div>
+            <div style="font-weight:700;font-size:12px;color:#111;">${al.title}</div>
+            <div style="font-size:11px;color:#666;margin:2px 0;">${al.message}</div>
+          </div>
+        `);
+      });
+    }).catch(() => {});
+
+    // Live GPS Marker
+    locMk.current = L.marker([15.85, 74.50], { icon: locIcon, zIndexOffset: 1000 }).addTo(map);
+    locCr.current = L.circle([15.85, 74.50], { radius: 50, fillColor: "#3B82F6", fillOpacity: 0.08, color: "#3B82F6", weight: 1, opacity: 0.25 }).addTo(map);
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(p => {
+        const ll: L.LatLngExpression = [p.coords.latitude, p.coords.longitude];
+        setLiveCoords({ lat: p.coords.latitude, lng: p.coords.longitude });
+        locMk.current?.setLatLng(ll); locCr.current?.setLatLng(ll);
+        map.setView(ll, full ? 16 : 15); hf.current = true;
+      }, () => {}, { enableHighAccuracy: true });
+
+      wId.current = navigator.geolocation.watchPosition(p => {
+        const ll: L.LatLngExpression = [p.coords.latitude, p.coords.longitude];
+        setLiveCoords({ lat: p.coords.latitude, lng: p.coords.longitude });
+        locMk.current?.setLatLng(ll); locCr.current?.setLatLng(ll).setRadius(p.coords.accuracy || 50);
+        if (!hf.current && mapObj.current) { mapObj.current.setView(ll, full ? 15 : 14); hf.current = true; }
+      }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    }
+
+    setTimeout(() => map.invalidateSize(), 100);
+    setTimeout(() => map.invalidateSize(), 300);
+    setTimeout(() => map.invalidateSize(), 600);
+    return () => {
+      if (wId.current !== null) navigator.geolocation.clearWatch(wId.current);
+      mapObj.current?.remove();
+      mapObj.current = null;
+    };
+  }, [full, layer]);
+
+  const handleMyLocation = () => {
+    if (liveCoords && mapObj.current) {
+      mapObj.current.setView([liveCoords.lat, liveCoords.lng], 16, { animate: true });
+    }
+  };
+
+  return (
+    <div className="relative w-full overflow-hidden rounded-2xl" style={{ height: h }}>
+      <div ref={ref} className="w-full h-full" />
+      <div style={{ zIndex: 500, position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
+        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+          {[{ label: "Live Traffic", dot: "#F97316" }, { label: "Live GPS", dot: "#3B82F6" }].map(b => (
+            <div key={b.label} className="bg-white/90 backdrop-blur-sm rounded-xl px-2.5 py-1.5 flex items-center gap-1.5 border border-zinc-100 shadow-sm">
+              <div className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: b.dot }} />
+              <span className="text-[11px] font-bold text-black">{b.label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="absolute right-3 bottom-3 flex flex-col gap-2 pointer-events-auto">
+          <button onClick={handleMyLocation} className="w-10 h-10 rounded-2xl bg-white border border-zinc-100 flex items-center justify-center shadow-md active:scale-95 transition-all">
+            <Navigation size={16} className="text-black" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 1. Home Screen ───────────────────────────────────────────────────────────
+function HomeScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  const user = api.getUser();
+  const displayName = user?.name || "Citizen";
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const [stats, setStats] = useState<any>(null);
+  const [recentIncidents, setRecentIncidents] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.getDashboardStats().then(d => { if (d && !d.message) setStats(d); }).catch(() => {});
+    api.getIncidents({ limit: '5' } as any).then((data: any) => {
+      const list = Array.isArray(data) ? data : data.incidents || data.data || [];
+      setRecentIncidents(list.slice(0, 5));
+    }).catch(() => {});
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 bg-white">
+      {/* Header */}
+      <div className="px-5 pt-12 pb-4">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-[12px] text-zinc-400 font-semibold uppercase tracking-wider">{greeting}</p>
+            <h1 className="text-[26px] font-black text-black leading-tight">{displayName} 👋</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setTab("alerts")} className="relative w-11 h-11 rounded-2xl bg-zinc-50 border border-zinc-100 flex items-center justify-center">
+              <Bell size={18} className="text-black" />
+              <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            </button>
+            <div onClick={() => setTab("profile")} className="w-11 h-11 rounded-2xl bg-black text-white flex items-center justify-center text-sm font-bold cursor-pointer shadow-sm">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="input-field flex items-center gap-3 px-4 py-3.5">
+          <Search size={15} className="text-zinc-400 shrink-0" />
+          <input
+            placeholder="Search traffic updates, road hazards, alerts…"
+            className="flex-1 bg-transparent outline-none text-[13px] text-black placeholder:text-zinc-400 font-medium"
+          />
+          <div className="w-7 h-7 rounded-xl bg-black flex items-center justify-center shrink-0">
+            <Navigation2 size={12} className="text-white" />
+          </div>
+        </div>
+      </div>
+
+      {/* Live Map Widget */}
+      <div className="px-5 mb-5">
+        <div className="flex items-center justify-between mb-2.5">
+          <p className="text-[14px] font-black text-black">Live Traffic Map</p>
+          <button onClick={() => setTab("map")} className="text-[12px] font-bold text-black flex items-center gap-0.5 hover:underline">
+            Full Map <ChevronRight size={13} />
+          </button>
+        </div>
+        <CityMapLeaflet full={false} layer="traffic" />
+      </div>
+
+      {/* Quick Actions */}
+      <div className="px-5 mb-5">
+        <p className="text-[14px] font-black text-black mb-3">Quick Actions</p>
+        <div className="overflow-x-auto no-scrollbar -mx-1 px-1">
+          <div className="flex gap-3 w-max">
+            {QUICK_ACTIONS.map(({ id, label, Icon, bg, color }) => (
+              <button
+                key={id}
+                onClick={() => setTab(id as MainTab)}
+                className="flex flex-col items-center gap-2 bg-white border border-zinc-100 rounded-2xl px-4 py-3.5 min-w-[76px] hover:bg-zinc-50 active:scale-95 transition-all shadow-xs"
+              >
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ backgroundColor: bg }}>
+                  <Icon size={18} style={{ color }} />
+                </div>
+                <span className="text-[11px] font-semibold text-zinc-600 text-center leading-tight">{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* AI Traffic Insights */}
+      <div className="px-5 mb-5">
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="flex items-center gap-2">
+            <Cpu size={14} className="text-black" />
+            <p className="text-[14px] font-black text-black">AI Traffic Insights</p>
+          </div>
+          <div className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-100 rounded-xl px-2.5 py-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-black text-emerald-600">LIVE</span>
+          </div>
+        </div>
+        <div className="bg-white border border-zinc-100 rounded-2xl p-4 shadow-xs">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: "Active Incidents", value: stats?.incidents?.active?.toString() || "3", color: "#EF4444" },
+              { label: "Avg Delay", value: "14 min", color: "#F97316" },
+              { label: "City Alerts", value: stats?.alerts?.active?.toString() || "2", color: "#CA8A04" },
+              { label: "Resolved Today", value: stats?.incidents?.resolved?.toString() || "5", color: "#16A34A" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100">
+                <span className="text-[11px] text-zinc-400 font-semibold">{label}</span>
+                <div className="text-[18px] font-black mt-1" style={{ color }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Incidents List */}
+      <div className="px-5 mb-5">
+        <div className="flex items-center justify-between mb-2.5">
+          <p className="text-[14px] font-black text-black">Nearby Live Incidents</p>
+          <button onClick={() => setTab("track")} className="text-[12px] font-bold text-black flex items-center gap-0.5 hover:underline">
+            View All <ChevronRight size={13} />
+          </button>
+        </div>
+        <div className="space-y-2.5">
+          {recentIncidents.length === 0 ? (
+            <div className="p-4 bg-zinc-50 rounded-2xl text-center text-zinc-400 text-xs">
+              Roads are currently clear in your area.
+            </div>
+          ) : (
+            recentIncidents.map((inc, i) => (
+              <div key={inc._id || i} className="bg-white border border-zinc-100 rounded-2xl p-3.5 flex items-center gap-3 shadow-xs">
+                {inc.images?.[0] ? (
+                  <img src={inc.images[0]} alt="evidence" className="w-12 h-12 rounded-xl object-cover border border-zinc-100 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 bg-zinc-50 rounded-xl flex items-center justify-center text-xl shrink-0">
+                    {inc.type === 'accident' ? '🚗' : inc.type === 'traffic_jam' ? '🚦' : inc.type === 'pothole' ? '🕳️' : '📍'}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-bold text-black truncate">{inc.title || inc.type}</div>
+                  <div className="text-[11px] text-zinc-400 truncate mt-0.5">{inc.location?.address || 'Location on map'}</div>
+                  <span className={`inline-block mt-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${inc.priority === 'critical' ? 'bg-red-50 text-red-600' : inc.priority === 'high' ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    {(inc.priority || 'MEDIUM').toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 2. Full Map Screen ───────────────────────────────────────────────────────
+function MapScreen() {
+  const [layer, setLayer] = useState<MapLayer>("traffic");
+  return (
+    <div className="flex flex-col h-full bg-white relative pb-24">
+      <div className="px-5 pt-10 pb-3 shrink-0 flex items-center justify-between border-b border-zinc-100">
+        <div>
+          <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Navigation & Grid</p>
+          <h2 className="text-[20px] font-black text-black">Live City Map</h2>
+        </div>
+        <div className="flex gap-1.5 bg-zinc-100 p-1 rounded-xl">
+          {(['traffic', 'accidents'] as const).map(l => (
+            <button
+              key={l}
+              onClick={() => setLayer(l as MapLayer)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold capitalize transition-all ${
+                layer === l ? 'bg-white text-black shadow-xs' : 'text-zinc-500'
+              }`}
+            >
+              {l === 'traffic' ? '🚦 Traffic' : '🚗 Incidents'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 relative w-full h-full">
+        <CityMapLeaflet full={true} layer={layer} />
+      </div>
+    </div>
+  );
+}
+
+// ─── 3. Report Screen (With Live Location & Image Upload) ─────────────────────
+function ReportsScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  const [selectedType, setSelectedType] = useState<string>("accident");
+  const [title, setTitle] = useState("");
+  const [priority, setPriority] = useState("high");
+  const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [ticketId, setTicketId] = useState("");
+
+  // Live GPS
+  const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
+
+  // Image Upload
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedCategory = REPORT_TYPES.find(t => t.id === selectedType) || REPORT_TYPES[0];
+
+  const detectLocation = () => {
+    setLocLoading(true);
+    if (!navigator.geolocation) {
+      setLiveLocation({ lat: 15.8497, lng: 74.4977, address: "Belagavi, RPD Cross" });
+      setLocLoading(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        let address = `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+          const data = await res.json();
+          if (data && data.display_name) {
+            address = data.display_name.split(",").slice(0, 3).join(", ");
+          }
+        } catch {}
+        setLiveLocation({ lat, lng, address });
+        setLocLoading(false);
+      },
+      () => {
+        setLiveLocation({ lat: 15.8497, lng: 74.4977, address: "Belagavi, RPD Cross (GPS fallback)" });
+        setLocLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  useEffect(() => {
+    detectLocation();
+  }, []);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error("Image size must be less than 15MB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageBase64(reader.result as string);
+      toast.success("📷 Photo attached!");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async () => {
+    if (!liveLocation) {
+      toast.error("Waiting for GPS location...");
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        type: selectedType,
+        title: title.trim() || `${selectedCategory.label} — ${liveLocation.address.split(",")[0]}`,
+        description: description.trim() || `${selectedCategory.label} reported by citizen at ${liveLocation.address}`,
+        location: { lat: liveLocation.lat, lng: liveLocation.lng, address: liveLocation.address },
+        priority,
+        images: imageBase64 ? [imageBase64] : [],
+      };
+
+      const res = await api.createIncident(payload);
+      setTicketId(res._id ? res._id.slice(-6).toUpperCase() : "CC-" + Math.floor(1000 + Math.random() * 9000));
+      setSubmitted(true);
+      toast.success(`🚨 Dispatched to ${selectedCategory.authority}!`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit report");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-6 text-center bg-white pb-20">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
+          <Check size={32} className="text-emerald-600" strokeWidth={3} />
+        </div>
+        <h2 className="text-[22px] font-black text-black mb-1">Report Dispatched!</h2>
+        <p className="text-[13px] text-zinc-500 mb-2">
+          Your report has been sent directly to <strong>{selectedCategory.authority}</strong>.
+        </p>
+        <div className="bg-zinc-50 border border-zinc-100 rounded-2xl px-5 py-3 mb-6">
+          <span className="text-[11px] text-zinc-400 font-semibold uppercase">Ticket Reference</span>
+          <div className="text-[20px] font-black text-black tracking-wider">{ticketId}</div>
+        </div>
+        <div className="flex gap-3 w-full">
+          <button onClick={() => { setSubmitted(false); setImageBase64(null); setTitle(""); setDescription(""); }} className="btn-secondary flex-1 py-3.5 text-xs font-bold">
+            Report Another
+          </button>
+          <button onClick={() => setTab("home")} className="btn-primary flex-1 py-3.5 text-xs font-bold">
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-32 px-5 pt-12 bg-white">
+      <div className="mb-4">
+        <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Citizen Reporting</p>
+        <h2 className="text-[22px] font-black text-black">Report an Issue</h2>
+        <p className="text-[12px] text-zinc-400 mt-0.5">Captures your live location & alerts respective authorities</p>
+      </div>
+
+      {/* Category Grid */}
+      <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-2.5">Select Issue Type</p>
+      <div className="grid grid-cols-2 gap-2.5 mb-4">
+        {REPORT_TYPES.map(({ id, label, icon: Icon, color, bg }) => {
+          const active = selectedType === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setSelectedType(id)}
+              className={`p-3 rounded-2xl border text-left transition-all flex items-center gap-3 ${
+                active ? "bg-black text-white border-black shadow-md" : "bg-white border-zinc-100 text-black hover:border-zinc-200"
+              }`}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: active ? "#222" : bg }}>
+                <Icon size={18} style={{ color: active ? "#FFF" : color }} />
+              </div>
+              <span className="text-[12px] font-bold leading-tight">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Target Authority Dispatch Banner */}
+      <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between mb-4">
+        <div>
+          <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Routes Directly To</span>
+          <div className="text-[13px] font-extrabold text-blue-950">{selectedCategory.authority}</div>
+        </div>
+        <span className="text-[10px] bg-blue-200 text-blue-900 font-bold px-2 py-0.5 rounded-lg">Auto Dispatch</span>
+      </div>
+
+      {/* Title */}
+      <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-2">Title / Short Description</p>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Enter incident title or brief summary"
+        className="w-full input-field px-4 py-3.5 text-[13px] text-black placeholder:text-zinc-400 outline-none mb-4 font-medium"
+      />
+
+      {/* Evidence Photo Upload */}
+      <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-2">Attach Evidence Photo</p>
+      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
+
+      {imageBase64 ? (
+        <div className="relative rounded-2xl overflow-hidden border border-zinc-200 mb-4">
+          <img src={imageBase64} alt="Incident evidence" className="w-full h-44 object-cover" />
+          <button onClick={() => setImageBase64(null)} className="absolute top-2 right-2 p-1.5 bg-black/70 hover:bg-black text-white rounded-full">
+            <X size={16} />
+          </button>
+          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-lg">
+            📷 Photo Attached
+          </div>
+        </div>
+      ) : (
+        <div onClick={() => fileInputRef.current?.click()} className="w-full h-24 border-2 border-dashed border-zinc-200 hover:border-black rounded-2xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors mb-4 bg-zinc-50">
+          <Camera size={20} className="text-zinc-400" />
+          <span className="text-[12px] font-bold text-black">Take Photo or Choose File</span>
+          <span className="text-[10px] text-zinc-400">JPG, PNG up to 15MB</span>
+        </div>
+      )}
+
+      {/* Live Location Box */}
+      <div className="bg-zinc-50 border border-zinc-100 rounded-2xl p-3.5 mb-4">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">📍 Live GPS Location</span>
+          <button onClick={detectLocation} disabled={locLoading} className="text-[11px] text-blue-600 font-bold hover:underline flex items-center gap-1">
+            <RefreshCcw size={11} className={locLoading ? "animate-spin" : ""} />
+            {locLoading ? "Detecting..." : "Refresh GPS"}
+          </button>
+        </div>
+        <p className="text-[12px] font-bold text-black line-clamp-1">{liveLocation?.address || "Detecting live GPS..."}</p>
+        <span className="text-[10px] text-zinc-400 font-mono mt-0.5 block">
+          {liveLocation ? `Coordinates: ${liveLocation.lat.toFixed(5)}, ${liveLocation.lng.toFixed(5)}` : "Fetching satellites..."}
+        </span>
+      </div>
+
+      {/* Priority Selection */}
+      <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-2">Priority Level</p>
+      <div className="flex gap-2 mb-4">
+        {(["low", "medium", "high", "critical"] as const).map((p) => {
+          const active = priority === p;
+          return (
+            <button
+              key={p}
+              onClick={() => setPriority(p)}
+              className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold capitalize transition-all border ${
+                active ? "bg-black text-white border-black shadow-xs" : "bg-zinc-50 text-zinc-600 border-zinc-100"
+              }`}
+            >
+              {p}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Notes / Details */}
+      <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-2">Details (Optional)</p>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Add details, landmarks, or vehicle numbers..."
+        rows={2}
+        className="w-full input-field px-4 py-3 text-[13px] text-black placeholder:text-zinc-400 outline-none resize-none mb-6 font-medium"
+      />
+
+      {/* Submit Button */}
+      <button onClick={handleSubmit} disabled={loading || !liveLocation} className="btn-primary w-full py-4 text-[14px] disabled:opacity-50">
+        {loading ? "Dispatching Alert to Authorities..." : "🚨 Submit & Alert Respective Authority"}
+      </button>
+    </div>
+  );
+}
+
+// ─── 4. Live Alerts Screen ────────────────────────────────────────────────────
+function AlertsScreen() {
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAlerts = () => {
+    setLoading(true);
+    api.getAlerts().then((data: any[]) => {
+      if (Array.isArray(data)) {
+        setAlerts(data);
+      }
+    }).catch(() => setAlerts([])).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchAlerts();
+
+    const socket = socketIO(SOCKET_URL);
+    socket.on('connect', () => socket.emit('join-role', 'all'));
+    socket.on('new-alert', (newAlert: any) => {
+      setAlerts(prev => [newAlert, ...prev]);
+      toast.warning(`⚠️ Live Alert: ${newAlert.title || 'City Broadcast'}`);
+    });
+
+    return () => { socket.disconnect(); };
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">City Broadcaster</p>
+          <h2 className="text-[22px] font-black text-black">Active Alerts</h2>
+        </div>
+        <button
+          onClick={fetchAlerts}
+          className="text-xs font-bold text-zinc-600 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-xl transition-all"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : alerts.length === 0 ? (
+        <div className="card p-8 text-center flex flex-col items-center justify-center my-6 border border-zinc-100">
+          <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+            <CheckCircle2 size={24} />
+          </div>
+          <p className="text-[14px] font-bold text-black">All Roads Clear</p>
+          <p className="text-[12px] text-zinc-400 mt-1 max-w-xs">
+            No active road blocks, collisions, or emergency alerts in Belagavi at this time.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {alerts.map((a: any, i: number) => {
+            const isRoadBlock = a.title?.toLowerCase().includes('road block') || a.type === 'traffic';
+            return (
+              <div
+                key={a._id || a.id || i}
+                className={`card p-4 flex items-start gap-3.5 shadow-xs border ${
+                  isRoadBlock ? 'border-orange-200 bg-orange-50/40' : 'border-zinc-100 bg-white'
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                    isRoadBlock ? 'bg-orange-100 text-orange-700' : 'bg-red-50 text-red-600'
+                  }`}
+                >
+                  {isRoadBlock ? <span className="text-lg">🚧</span> : <AlertTriangle size={18} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[13px] font-bold text-black truncate">{a.title}</span>
+                    <span
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0 ${
+                        isRoadBlock ? 'bg-orange-200 text-orange-800' : 'bg-zinc-100 text-zinc-600'
+                      }`}
+                    >
+                      {isRoadBlock ? 'ROAD BLOCK' : a.severity || 'medium'}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-zinc-600 mt-1 leading-relaxed">
+                    {a.message || a.loc || 'Alert issued by city authorities'}
+                  </p>
+                  {a.location?.address && (
+                    <p className="text-[11px] text-zinc-400 mt-1.5 flex items-center gap-1">
+                      <MapPin size={11} /> {a.location.address}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 5. Emergency SOS Screen ──────────────────────────────────────────────────
+function EmergencyScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  const [sending, setSending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  const handleSOS = async () => {
+    setSending(true);
+    for (let i = 3; i >= 1; i--) {
+      setCountdown(i);
+      await new Promise(r => setTimeout(r, 900));
+    }
+    setCountdown(0);
+    try {
+      await api.createIncident({
+        type: "accident",
+        title: "🚨 CRITICAL EMERGENCY SOS DISPATCH",
+        description: "Emergency SOS triggered by citizen. Immediate response required.",
+        location: { lat: 15.8497, lng: 74.4977, address: "Belagavi Central Emergency Grid" },
+        priority: "critical",
+      });
+      toast.success("🚨 EMERGENCY SOS BROADCASTED TO ALL UNITS!");
+    } catch {
+      toast.error("Failed to transmit SOS. Please call 112 directly.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-6 text-center pb-24 bg-white">
+      <div className="mb-6">
+        <span className="text-[11px] text-red-500 font-bold uppercase tracking-wider">High Priority Emergency</span>
+        <h2 className="text-[26px] font-black text-black">Instant SOS Dispatch</h2>
+        <p className="text-[13px] text-zinc-400 mt-1">Transmits your live coordinates to Police, Ambulance & Control Room</p>
+      </div>
+
+      <button
+        onClick={handleSOS}
+        disabled={sending}
+        className="w-48 h-48 rounded-full bg-red-600 hover:bg-red-700 text-white flex flex-col items-center justify-center shadow-2xl active:scale-95 transition-all mb-8 relative border-4 border-red-100"
+      >
+        <Shield size={48} className="mb-1" />
+        <span className="text-[22px] font-black tracking-widest">{countdown > 0 ? countdown : "HOLD SOS"}</span>
+        <span className="text-[11px] text-red-200 font-medium">Alert All Units</span>
+      </button>
+
+      {/* Quick Call Helplines */}
+      <div className="w-full grid grid-cols-2 gap-3 mb-4">
+        {[
+          { label: "Police 112", tel: "112", icon: "🚓" },
+          { label: "Ambulance 108", tel: "108", icon: "🚑" },
+        ].map(({ label, tel, icon }) => (
+          <a
+            key={label}
+            href={`tel:${tel}`}
+            className="p-3 bg-zinc-50 border border-zinc-100 rounded-2xl flex items-center justify-center gap-2 font-bold text-xs text-black hover:bg-zinc-100"
+          >
+            <span>{icon}</span> {label}
+          </a>
+        ))}
+      </div>
+
+      <button onClick={() => setTab("home")} className="text-xs text-zinc-400 font-semibold hover:text-black">
+        ← Cancel & Return Home
+      </button>
+    </div>
+  );
+}
+
+// ─── 6. AI Traffic Prediction Screen ──────────────────────────────────────────
+function AIPredictionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
+      <div className="mb-4">
+        <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Predictive Intelligence</p>
+        <h2 className="text-[22px] font-black text-black">AI Traffic Forecast</h2>
+      </div>
+
+      <div className="card p-4 mb-4 border border-zinc-100 shadow-xs">
+        <div className="flex items-center gap-2 mb-3">
+          <Brain size={18} className="text-purple-600" />
+          <span className="font-bold text-sm text-black">Belagavi Congestion Forecast</span>
+        </div>
+        <div className="space-y-3">
+          {[
+            { time: "05:00 PM - 06:30 PM", route: "RPD Cross to College Road", congestion: "88% Congested", delay: "+18m" },
+            { time: "06:30 PM - 08:00 PM", route: "Rani Channamma to Bogarves", congestion: "64% Moderate", delay: "+9m" },
+            { time: "08:00 PM - 10:00 PM", route: "Khanapur Rd to Camp",       congestion: "22% Clear",    delay: "Normal" },
+          ].map(f => (
+            <div key={f.route} className="bg-zinc-50 p-3 rounded-xl border border-zinc-100 flex items-center justify-between text-xs">
+              <div>
+                <div className="font-bold text-black">{f.route}</div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">{f.time}</div>
+              </div>
+              <span className="font-bold text-purple-600">{f.delay}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button onClick={() => setTab("home")} className="btn-secondary w-full py-3.5 text-xs font-bold">
+        Back to Dashboard
+      </button>
+    </div>
+  );
+}
+
+// ─── 7. Safe Route Screen ─────────────────────────────────────────────────────
+function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
+      <div className="mb-4">
+        <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Safe Navigation</p>
+        <h2 className="text-[22px] font-black text-black">Smart Route Finder</h2>
+      </div>
+      <div className="space-y-3 mb-6">
+        <div className="input-field p-3.5 flex items-center gap-3">
+          <MapPin size={16} className="text-blue-500 shrink-0" />
+          <input placeholder="Starting Point (My Live Location)" defaultValue="My Live GPS Location" className="bg-transparent text-xs font-bold outline-none flex-1 text-black" />
+        </div>
+        <div className="input-field p-3.5 flex items-center gap-3">
+          <Navigation2 size={16} className="text-emerald-500 shrink-0" />
+          <input placeholder="Enter Destination..." className="bg-transparent text-xs font-bold outline-none flex-1 text-black" />
+        </div>
+      </div>
+      <div className="card p-4 border border-zinc-100 mb-4">
+        <span className="text-[11px] font-bold text-zinc-400 uppercase">Recommended Safe Route</span>
+        <div className="text-[16px] font-extrabold text-black mt-1">Via Khanapur Bypass (Clear)</div>
+        <div className="text-xs text-zinc-500 mt-0.5">Avoids RPD Cross collision — 4.2 km · 11 mins</div>
+      </div>
+      <button onClick={() => setTab("map")} className="btn-primary w-full py-3.5 text-xs font-bold">
+        Open in Full Interactive Map
+      </button>
+    </div>
+  );
+}
+
+// ─── 8. Track Report Screen ───────────────────────────────────────────────────
+function TrackReportScreen({ setTab }: { setTab: (t: MainTab) => void }) {
+  const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getIncidents().then((d: any) => {
+      const list = Array.isArray(d) ? d : d.incidents || d.data || [];
+      setReports(list);
+    }).catch(() => setReports([])).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
+      <div className="mb-4">
+        <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Status Tracker</p>
+        <h2 className="text-[22px] font-black text-black">My Reports Status</h2>
+      </div>
+      <div className="space-y-3">
+        {loading ? (
+          <div className="text-xs text-zinc-400 text-center py-8">Loading reports...</div>
+        ) : reports.length === 0 ? (
+          <div className="text-xs text-zinc-400 text-center py-8">No reports filed yet.</div>
+        ) : (
+          reports.map((r, i) => (
+            <div key={r._id || i} className="card p-4 border border-zinc-100 shadow-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[13px] font-bold text-black">{r.title || r.type}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.status === 'resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+                  {(r.status || 'open').toUpperCase()}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400">{r.location?.address || 'Location provided'}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── 9. Profile Screen ────────────────────────────────────────────────────────
+function ProfileScreen({ onLogout }: { onLogout?: () => void }) {
+  const user = api.getUser();
+  const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+    } else {
+      api.clearToken();
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-5 pt-12 bg-white">
+      <div className="text-center mb-6">
+        <div className="w-20 h-20 bg-black text-white rounded-full flex items-center justify-center text-2xl font-black mx-auto mb-3 shadow-md">
+          {user?.name?.charAt(0).toUpperCase() || "C"}
+        </div>
+        <h2 className="text-[20px] font-black text-black">{user?.name || "Citizen"}</h2>
+        <p className="text-[12px] text-zinc-400">{user?.email}</p>
+        <span className="inline-block mt-2 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold rounded-full">
+          🛡️ Verified Citizen
+        </span>
+      </div>
+
+      <div className="space-y-3 mb-6">
+        <div className="card p-4 border border-zinc-100 flex items-center justify-between">
+          <span className="text-xs font-bold text-black">Emergency Contact</span>
+          <span className="text-xs text-zinc-500 font-mono">112 (Police) / 108 (Ambulance)</span>
+        </div>
+        <div className="card p-4 border border-zinc-100 flex items-center justify-between">
+          <span className="text-xs font-bold text-black">Location Access</span>
+          <span className="text-xs text-emerald-600 font-bold">Enabled (High Precision)</span>
+        </div>
+      </div>
+
+      <button onClick={handleLogout} className="btn-secondary w-full py-4 text-xs font-bold text-red-600 hover:bg-red-50 border border-red-100 flex items-center justify-center gap-2">
+        <LogOut size={16} /> Sign Out
+      </button>
+    </div>
+  );
+}
+
+// ─── Floating Bottom Navigation ───────────────────────────────────────────────
+function BottomNav({ tab, setTab }: { tab: MainTab; setTab: (t: MainTab) => void }) {
+  const tabs: { id: MainTab; Icon: any; label: string }[] = [
+    { id: "home",    Icon: Home,     label: "Home" },
+    { id: "map",     Icon: MapIcon,  label: "Map" },
+    { id: "alerts",  Icon: Bell,     label: "Alerts" },
+    { id: "reports", Icon: FileText, label: "Report" },
+    { id: "profile", Icon: User,     label: "Profile" },
+  ];
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 px-4 pb-4 z-[99999] pointer-events-none">
+      <div
+        className="bg-white rounded-3xl px-2 py-2 flex items-center justify-around border border-zinc-200 pointer-events-auto"
+        style={{ boxShadow: "0 -4px 30px rgba(0,0,0,0.12), 0 4px 20px rgba(0,0,0,0.14)" }}
+      >
+        {tabs.map(({ id, Icon, label }) => {
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all ${
+                active ? "bg-black text-white shadow-sm" : "text-zinc-400 hover:text-black"
+              }`}
+            >
+              <Icon size={18} className={active ? "text-white" : "text-zinc-400"} />
+              <span className={`text-[10px] font-bold ${active ? "text-white" : "text-zinc-500"}`}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Root Citizen Dashboard ───────────────────────────────────────────────────
+export function CitizenDashboard({ onLogout }: { onLogout?: () => void }) {
+  const [tab, setTab] = useState<MainTab>("home");
+
+  return (
+    <div className="fixed inset-0 bg-white overflow-hidden flex flex-col font-sans">
+      <Css />
+      <div className="flex-1 overflow-hidden relative">
+        {tab === "home"      && <HomeScreen setTab={setTab} />}
+        {tab === "map"       && <MapScreen />}
+        {tab === "alerts"    && <AlertsScreen />}
+        {tab === "reports"   && <ReportsScreen setTab={setTab} />}
+        {tab === "emergency" && <EmergencyScreen setTab={setTab} />}
+        {tab === "ai"        && <AIPredictionScreen setTab={setTab} />}
+        {tab === "route"     && <RouteDirectionScreen setTab={setTab} />}
+        {tab === "track"     && <TrackReportScreen setTab={setTab} />}
+        {tab === "profile"   && <ProfileScreen onLogout={onLogout} />}
+      </div>
+      <BottomNav tab={tab} setTab={setTab} />
+    </div>
+  );
+}
+export default CitizenDashboard;
