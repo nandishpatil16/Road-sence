@@ -89,7 +89,7 @@ export function ReportPage() {
 
   return (
     <div className="h-full bg-white overflow-y-auto pb-24">
-      <div className="sticky top-0 bg-white border-b border-gray-200 p-4">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 p-4 shadow-xs">
         <h2 className="text-2xl font-bold text-black">Report Incident</h2>
         <p className="text-sm text-gray-500">Submit a new traffic incident report</p>
       </div>

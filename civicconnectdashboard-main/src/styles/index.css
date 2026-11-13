@@ -1,3 +1,29 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* ── Leaflet Stacking Context Isolation ── */
+/* Prevents Leaflet internal z-index (400-1000) from ever overlapping headers, modals, or navbars */
+.leaflet-container {
+  isolation: isolate !important;
+  z-index: 0 !important;
+  touch-action: pan-x pan-y !important;
+}
+
+.leaflet-pane {
+  z-index: 10 !important;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 20 !important;
+}
+
+.leaflet-control {
+  z-index: 20 !important;
+}
+
+/* Ensure smooth native momentum scrolling on mobile browsers */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}

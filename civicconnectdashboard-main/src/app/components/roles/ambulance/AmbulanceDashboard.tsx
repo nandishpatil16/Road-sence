@@ -56,7 +56,7 @@ function AmbulanceMap({ incidents, onSelect }: { incidents: any[]; onSelect: (i:
     setTimeout(() => map.invalidateSize(), 100);
     return () => { mapRef.current?.remove(); mapRef.current = null; };
   }, [incidents]);
-  return <div ref={ref} className="w-full rounded-2xl overflow-hidden border border-gray-200" style={{ height: 260 }} />;
+  return <div ref={ref} className="relative isolate z-0 w-full rounded-2xl overflow-hidden border border-gray-200 shadow-xs" style={{ height: 260 }} />;
 }
 
 // ─── Main Dashboard ────────────────────────────────────────
@@ -181,32 +181,34 @@ export function AmbulanceDashboard({ onLogout }: AmbulanceDashboardProps) {
     // Dashboard home
     return (
       <>
-        <div className="sticky top-0 z-20 bg-white border-b border-gray-100 p-4">
-          <div className="flex items-center justify-between mb-3">
+        {/* Compact Sticky Top Bar */}
+        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 py-3 shadow-xs">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-400 uppercase">{greeting}</p>
-              <h1 className="text-2xl font-bold text-black">{user?.name || 'Ambulance Driver'}</h1>
-              <div className="flex items-center gap-2 mt-1">
+              <p className="text-[10px] text-gray-400 uppercase font-semibold">{greeting}</p>
+              <h1 className="text-xl font-bold text-black">{user?.name || 'Ambulance Driver'}</h1>
+              <div className="flex items-center gap-2 mt-0.5">
                 <motion.div className={`w-2 h-2 rounded-full ${emergencyMode ? 'bg-red-500' : 'bg-green-500'}`} animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} />
-                <span className={`text-xs font-medium ${emergencyMode ? 'text-red-600' : 'text-green-600'}`}>{emergencyMode ? '🚨 EMERGENCY MODE' : '✅ Available'}</span>
+                <span className={`text-[11px] font-bold ${emergencyMode ? 'text-red-600' : 'text-green-600'}`}>{emergencyMode ? '🚨 EMERGENCY ACTIVE' : '✅ Available'}</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPage('alerts')} className="relative p-2 rounded-xl bg-gray-50 hover:bg-gray-100"><Bell className="w-5 h-5 text-black" />{activeCount > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{activeCount}</span>}</button>
-              <button onClick={() => setPage('profile')} className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center"><User className="w-5 h-5 text-gray-700" /></button>
-              <button onClick={() => onLogout?.()} className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center gap-1 text-xs font-bold" title="Logout">
+              <button onClick={() => setPage('alerts')} className="relative p-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"><Bell className="w-5 h-5 text-black" />{activeCount > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{activeCount}</span>}</button>
+              <button onClick={() => setPage('profile')} className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"><User className="w-5 h-5 text-gray-700" /></button>
+              <button onClick={() => onLogout?.()} className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center gap-1 text-xs font-bold transition-colors" title="Logout">
                 <LogOut className="w-4 h-4" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>
-          <motion.button onClick={() => { setEmergencyMode(!emergencyMode); toast[emergencyMode ? 'info' : 'success'](emergencyMode ? 'Emergency mode off' : '🚨 Emergency Mode Activated!'); }}
-            whileTap={{ scale: 0.98 }} className={`w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 ${emergencyMode ? 'bg-yellow-400 text-black' : 'bg-red-600 text-white'}`}>
-            <Siren className="w-5 h-5" />{emergencyMode ? 'DEACTIVATE EMERGENCY' : 'ACTIVATE EMERGENCY MODE'}
-          </motion.button>
         </div>
 
-        <div className="p-4 space-y-4">
+        {/* Scrollable Body Content */}
+        <div className="p-4 space-y-4 pb-28">
+          <motion.button onClick={() => { setEmergencyMode(!emergencyMode); toast[emergencyMode ? 'info' : 'success'](emergencyMode ? 'Emergency mode off' : '🚨 Emergency Mode Activated!'); }}
+            whileTap={{ scale: 0.98 }} className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-all ${emergencyMode ? 'bg-yellow-400 text-black shadow-yellow-400/20' : 'bg-red-600 text-white shadow-red-600/20'}`}>
+            <Siren className="w-5 h-5" />{emergencyMode ? 'DEACTIVATE EMERGENCY' : 'ACTIVATE EMERGENCY MODE'}
+          </motion.button>
           {/* Stats */}
           <div className="grid grid-cols-3 gap-2">
             {[{ l: 'Active', v: activeCount, c: 'bg-red-50 text-red-600' }, { l: 'In Progress', v: incidents.filter(i => i.status === 'in_progress').length, c: 'bg-blue-50 text-blue-600' }, { l: 'Resolved', v: incidents.filter(i => i.status === 'resolved').length, c: 'bg-green-50 text-green-600' }].map(s => (
@@ -276,7 +278,7 @@ export function AmbulanceDashboard({ onLogout }: AmbulanceDashboardProps) {
     <div className="relative h-full overflow-hidden bg-white">
       <div className="relative z-10 h-full overflow-y-auto pb-24">{renderPage()}</div>
       {/* Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg">
         <div className="grid grid-cols-5 max-w-md mx-auto">
           {tabs.map(tab => { const active = page === tab.id; return (
             <button key={tab.id} onClick={() => setPage(tab.id)} className="relative p-4 flex flex-col items-center gap-1">

@@ -422,7 +422,7 @@ export function MapPage({ incidents: propIncidents, onSelectIncident, onResolve 
   return (
     <div className="h-full bg-white flex flex-col overflow-y-auto no-scrollbar pb-28">
       {/* Real Leaflet Map Container */}
-      <div className="relative w-full h-[54vh] min-h-[320px] bg-gray-100 border-b border-gray-200">
+      <div className="relative isolate z-0 w-full h-[54vh] min-h-[320px] bg-gray-100 border-b border-gray-200">
         <div ref={mapRef} className="w-full h-full" style={{ zIndex: 1 }} />
 
         {/* Floating Search Bar */}

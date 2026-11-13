@@ -89,7 +89,7 @@ function ZoneMap({ incidents, zones, onSelect }: { incidents: any[]; zones: any[
     };
   }, [incidents, zones]);
 
-  return <div ref={ref} className="w-full rounded-2xl overflow-hidden border border-gray-200" style={{ height: 260 }} />;
+  return <div ref={ref} className="relative isolate z-0 w-full rounded-2xl overflow-hidden border border-gray-200 shadow-xs" style={{ height: 260 }} />;
 }
 
 interface ConstructionDashboardProps {
@@ -686,14 +686,15 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
     // ─── PAGE: HOME (Dashboard) ────────────────────────────────────────────────
     return (
       <>
-        <div className="sticky top-0 z-20 bg-white border-b border-gray-100 p-4">
-          <div className="flex items-center justify-between mb-3">
+        {/* Compact Sticky Top Bar */}
+        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 py-3 shadow-xs">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-black">Construction Control</h1>
-              <p className="text-xs text-gray-400">Belagavi Roads & Infrastructure Authority</p>
+              <h1 className="text-xl font-black text-black">Construction Control</h1>
+              <p className="text-[11px] text-gray-400 font-medium">Belagavi Roads & Infrastructure Authority</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPage('reports')} className="relative p-2 rounded-xl bg-gray-50 hover:bg-gray-100" title="Reports">
+              <button onClick={() => setPage('reports')} className="relative p-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors" title="Reports">
                 <Bell className="w-5 h-5 text-black" />
                 {activeReports.length > 0 && (
                   <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -701,18 +702,21 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
                   </span>
                 )}
               </button>
-              <button onClick={() => setPage('profile')} className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+              <button onClick={() => setPage('profile')} className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
                 <User className="w-5 h-5 text-gray-700" />
               </button>
-              <button onClick={() => onLogout?.()} className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center gap-1 text-xs font-bold" title="Logout">
+              <button onClick={() => onLogout?.()} className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center gap-1 text-xs font-bold transition-colors" title="Logout">
                 <LogOut className="w-4 h-4" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>
+        </div>
 
+        {/* Scrollable Body Content */}
+        <div className="p-4 space-y-4 pb-28">
           {/* 4 Metrics Cards */}
-          <div className="grid grid-cols-4 gap-2 mb-3">
+          <div className="grid grid-cols-4 gap-2">
             {[
               { l: 'Reports', v: activeReports.length, c: 'bg-red-50 text-red-600', action: () => setPage('reports') },
               { l: 'Zones', v: zones.length, c: 'bg-orange-50 text-orange-600', action: () => setPage('zones') },
@@ -722,9 +726,9 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
               <div
                 key={s.l}
                 onClick={s.action}
-                className={`${s.c} rounded-xl p-2 text-center cursor-pointer hover:opacity-90 active:scale-95 transition-all`}
+                className={`${s.c} rounded-2xl p-2.5 text-center cursor-pointer hover:opacity-90 active:scale-95 transition-all shadow-xs`}
               >
-                <div className="text-lg font-black">{s.v}</div>
+                <div className="text-xl font-black">{s.v}</div>
                 <div className="text-[10px] font-bold opacity-80 truncate">{s.l}</div>
               </div>
             ))}
@@ -732,14 +736,12 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
 
           <button
             onClick={() => setShowAddZone(true)}
-            className="w-full py-3 bg-orange-500 hover:bg-orange-600 active:scale-[0.99] text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md shadow-orange-500/20 transition-all"
+            className="w-full py-3.5 bg-orange-500 hover:bg-orange-600 active:scale-[0.99] text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md shadow-orange-500/20 transition-all text-sm"
           >
             <Plus className="w-5 h-5" />
             Add Construction Zone / Road Block
           </button>
-        </div>
 
-        <div className="p-4 space-y-4 pb-28">
           {/* Map Preview */}
           <div>
             <div className="flex justify-between items-center mb-2">
@@ -871,7 +873,7 @@ export function ConstructionDashboard({ onLogout }: ConstructionDashboardProps) 
       <div className="relative z-10 h-full overflow-y-auto pb-24">{renderPage()}</div>
 
       {/* Bottom Navigation: Tab 4 is now 'Reports' */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg">
         <div className="grid grid-cols-5 max-w-md mx-auto">
           {tabs.map(t => {
             const a = page === t.id;

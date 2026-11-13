@@ -16,7 +16,7 @@ export function BottomNav({ currentPage, onNavigate }: BottomNavProps) {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg">
       <div className="grid grid-cols-5 max-w-md mx-auto">
         {tabs.map((tab) => {
           const isActive = currentPage === tab.id;

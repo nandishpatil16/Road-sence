@@ -29,7 +29,7 @@ function CityMap({incidents,onSelect}:{incidents:any[];onSelect:(i:any)=>void}){
     setTimeout(()=>map.invalidateSize(),100);
     return()=>{m.current?.remove();m.current=null;};
   },[incidents]);
-  return <div ref={ref} className="w-full rounded-2xl overflow-hidden border border-gray-200" style={{height:280}}/>;
+  return <div ref={ref} className="relative isolate z-0 w-full rounded-2xl overflow-hidden border border-gray-200 shadow-xs" style={{height:280}}/>;
 }
 
 interface AdminDashboardProps {
@@ -129,8 +129,8 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
     );
     // Home
     return (<>
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 p-4">
-        <div className="flex items-center justify-between mb-3"><div><div className="flex items-center gap-2"><Shield className="w-5 h-5 text-blue-600"/><h1 className="text-xl font-bold text-black">City Command Center</h1></div><p className="text-xs text-gray-400 mt-0.5">Belagavi Smart City • Admin Control</p></div>
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 p-4 shadow-xs">
+        <div className="flex items-center justify-between"><div><div className="flex items-center gap-2"><Shield className="w-5 h-5 text-blue-600"/><h1 className="text-xl font-bold text-black">City Command Center</h1></div><p className="text-xs text-gray-400 mt-0.5">Belagavi Smart City • Admin Control</p></div>
           <div className="flex items-center gap-2">
             <button onClick={()=>setPage('incidents')} className="relative p-2 rounded-xl bg-gray-50 hover:bg-gray-100"><Bell className="w-5 h-5 text-black"/>{open>0&&<span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{open}</span>}</button>
             <button onClick={()=>setPage('profile')} className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center"><User className="w-5 h-5 text-gray-700"/></button>
@@ -139,13 +139,13 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
               <span className="hidden sm:inline">Logout</span>
             </button>
           </div></div>
+      </div>
+      <div className="p-4 space-y-4">
         <div className="grid grid-cols-4 gap-2">
           {[{l:'Open',v:open,c:'bg-red-50 text-red-600'},{l:'Progress',v:prog,c:'bg-blue-50 text-blue-600'},{l:'Solved',v:solved,c:'bg-green-50 text-green-600'},{l:'Total',v:incidents.length,c:'bg-gray-50 text-black'}].map(s=>(
             <div key={s.l} className={`${s.c} rounded-xl p-2.5 text-center`}><div className="text-lg font-bold">{s.v}</div><div className="text-[10px] font-medium opacity-70">{s.l}</div></div>
           ))}
         </div>
-      </div>
-      <div className="p-4 space-y-4">
         {/* City Map */}
         <div><div className="flex justify-between items-center mb-2"><h3 className="font-bold text-black flex items-center gap-2"><MapPin className="w-4 h-4 text-blue-500"/>City Map</h3><button onClick={()=>setPage('map')} className="text-xs font-bold text-black">Full Map →</button></div>
           <CityMap incidents={incidents} onSelect={setSelected}/></div>
@@ -186,7 +186,7 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
   return (
     <div className="relative h-full overflow-hidden bg-white">
       <div className="relative z-10 h-full overflow-y-auto pb-24">{renderPage()}</div>
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200"><div className="grid grid-cols-5 max-w-md mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg"><div className="grid grid-cols-5 max-w-md mx-auto">
         {tabs.map(t=>{const a=page===t.id; return(<button key={t.id} onClick={()=>setPage(t.id)} className="relative p-4 flex flex-col items-center gap-1"><t.icon className={`w-6 h-6 ${a?'text-black':'text-gray-400'}`} fill={a?'black':'none'}/><span className={`text-xs ${a?'text-black font-medium':'text-gray-400'}`}>{t.label}</span>{a&&<motion.div layoutId="adm-nav" className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-black rounded-full" transition={{type:'spring',duration:0.6}}/>}</button>)})}
       </div></div>
       <AnimatePresence>{showBanner&&alertData&&(

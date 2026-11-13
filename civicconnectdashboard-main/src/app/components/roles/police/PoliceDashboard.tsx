@@ -200,7 +200,7 @@ function IncidentMap({ incidents, onSelectIncident }: { incidents: any[]; onSele
           <span className="text-xs font-medium text-green-600">LIVE</span>
         </div>
       </div>
-      <div ref={mapRef} className="w-full rounded-2xl overflow-hidden border border-gray-200" style={{ height: 280 }} />
+      <div ref={mapRef} className="relative isolate z-0 w-full rounded-2xl overflow-hidden border border-gray-200 shadow-xs" style={{ height: 280 }} />
       <div className="flex items-center gap-4 mt-2 px-1">
         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500 border-2 border-white shadow" /><span className="text-[10px] text-gray-500">High</span></div>
         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-orange-500 border-2 border-white shadow" /><span className="text-[10px] text-gray-500">Medium</span></div>
@@ -456,8 +456,8 @@ export function PoliceDashboard({ onLogout }: PoliceDashboardProps) {
       default:
         return (
           <>
-            {/* Professional Header (No 9:41 fake phone bar) */}
-            <div className="sticky top-0 z-20 bg-white border-b border-gray-100 p-4">
+            {/* Professional Header */}
+            <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 p-4 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">🚔</span>

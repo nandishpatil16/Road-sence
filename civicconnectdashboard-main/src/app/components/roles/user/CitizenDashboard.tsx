@@ -235,7 +235,7 @@ function CityMapLeaflet({ full = false, layer = "traffic" }: { full?: boolean; l
   };
 
   return (
-    <div className="relative w-full overflow-hidden rounded-2xl" style={{ height: h }}>
+    <div className="relative isolate z-0 w-full overflow-hidden rounded-2xl shadow-xs" style={{ height: h }}>
       <div ref={ref} className="w-full h-full" />
       <div style={{ zIndex: 500, position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
         <div className="absolute top-3 left-3 flex flex-col gap-1.5">
