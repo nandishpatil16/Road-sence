@@ -981,6 +981,16 @@ async function fetchOSRMRoutes(
   }));
 }
 
+// ─── Vehicle Details Type ─────────────────────────────────────────────────────
+type VehicleDetails = {
+  type: 'car' | 'bike' | 'ev';
+  mileage: string;        // km/L (or km/kWh for EV)
+  fuelLeft: string;       // litres remaining (or % battery for EV)
+  tankSize: string;       // total tank in litres (or battery kWh)
+  fuelPrice: string;      // INR per litre / INR per kWh
+  vehicleName: string;    // e.g. "Honda City", "Royal Enfield"
+};
+
 function SmartRouteMap({ routes, fromCoord, toCoord, fromName, toName, activeIdx }: {
   routes: OSRMRoute[];
   fromCoord: { lat: number; lng: number };
@@ -997,44 +1007,282 @@ function SmartRouteMap({ routes, fromCoord, toCoord, fromName, toName, activeIdx
     if (!mapRef.current) return;
     if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; }
 
-    const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false });
+    const map = L.map(mapRef.current, { zoomControl: true, attributionControl: false });
     mapObj.current = map;
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
     const allPts: [number, number][] = [[fromCoord.lat, fromCoord.lng], [toCoord.lat, toCoord.lng]];
 
-    // Draw inactive routes first (dimmed), active last (on top)
+    // ── Draw ALL routes simultaneously — none are hidden ──────────────────────
+    // Draw in reverse order so active route is rendered last (on top)
     [...routes].reverse().forEach((route, revIdx) => {
       const idx = routes.length - 1 - revIdx;
       const pts: [number, number][] = route.geometry.map(([lng, lat]) => [lat, lng]);
       pts.forEach(p => allPts.push(p));
       const isActive = idx === activeIdx;
-      L.polyline(pts, { color: '#fff', weight: isActive ? 9 : 7, opacity: isActive ? 0.9 : 0.5 }).addTo(map);
+
+      // White halo behind every route for readability
+      L.polyline(pts, {
+        color: '#ffffff',
+        weight: isActive ? 10 : 8,
+        opacity: isActive ? 0.9 : 0.6,
+      }).addTo(map);
+
+      // Coloured route line — ALL visible, active is bolder
       L.polyline(pts, {
         color: COLORS[idx] || COLORS[0],
-        weight: isActive ? 6 : 3,
-        opacity: isActive ? 1 : 0.35,
-        dashArray: isActive ? undefined : '7 5',
-      }).bindTooltip(`${LABELS[idx]} · ${route.distanceKm} km · ${route.durationMins} min`, { sticky: true }).addTo(map);
+        weight: isActive ? 7 : 4,
+        opacity: isActive ? 1 : 0.65,
+      }).bindTooltip(
+        `<b>${LABELS[idx]}</b><br/>${route.distanceKm} km · ${route.durationMins} min`,
+        { sticky: true, direction: 'top' }
+      ).addTo(map);
+
+      // Distance label badge in the middle of each route
+      if (pts.length > 0) {
+        const mid = pts[Math.floor(pts.length / 2)];
+        const badgeIcon = L.divIcon({
+          className: '',
+          iconSize: [80, 22],
+          iconAnchor: [40, 11],
+          html: `<div style="background:${COLORS[idx] || COLORS[0]};color:#fff;font-size:9px;font-weight:900;border-radius:999px;padding:2px 7px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.25);border:2px solid #fff;">${LABELS[idx]} · ${route.durationMins}m</div>`,
+        });
+        L.marker(mid, { icon: badgeIcon, interactive: false }).addTo(map);
+      }
     });
 
-    // Start marker
-    const startIcon = L.divIcon({ className: '', iconSize: [32, 32], iconAnchor: [16, 16],
-      html: `<div style="width:32px;height:32px;border-radius:50%;background:#22C55E;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:14px">🟢</div>` });
-    L.marker([fromCoord.lat, fromCoord.lng], { icon: startIcon }).bindPopup(`<b>Start:</b> ${fromName}`).addTo(map);
+    // Start marker (green)
+    const startIcon = L.divIcon({ className: '', iconSize: [36, 36], iconAnchor: [18, 18],
+      html: `<div style="width:36px;height:36px;border-radius:50%;background:#16A34A;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:16px">🟢</div>` });
+    L.marker([fromCoord.lat, fromCoord.lng], { icon: startIcon })
+      .bindPopup(`<b>📍 Start:</b> ${fromName}`).addTo(map);
 
-    // End marker
-    const endIcon = L.divIcon({ className: '', iconSize: [32, 32], iconAnchor: [16, 16],
-      html: `<div style="width:32px;height:32px;border-radius:50%;background:#EF4444;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:14px">🏁</div>` });
-    L.marker([toCoord.lat, toCoord.lng], { icon: endIcon }).bindPopup(`<b>Destination:</b> ${toName}`).addTo(map);
+    // End marker (red flag)
+    const endIcon = L.divIcon({ className: '', iconSize: [36, 36], iconAnchor: [18, 18],
+      html: `<div style="width:36px;height:36px;border-radius:50%;background:#EF4444;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:16px">🏁</div>` });
+    L.marker([toCoord.lat, toCoord.lng], { icon: endIcon })
+      .bindPopup(`<b>🏁 Destination:</b> ${toName}`).addTo(map);
 
-    map.fitBounds(L.latLngBounds(allPts), { padding: [30, 30] });
+    map.fitBounds(L.latLngBounds(allPts), { padding: [36, 36] });
 
     return () => { mapObj.current?.remove(); mapObj.current = null; };
   }, [routes, fromCoord, toCoord, activeIdx]);
 
   return (
-    <div ref={mapRef} style={{ height: 260, borderRadius: '1rem', overflow: 'hidden', border: '1px solid #E4E4E7' }} />
+    <div ref={mapRef} style={{ height: 290, borderRadius: '1rem', overflow: 'hidden', border: '1px solid #E4E4E7' }} />
+  );
+}
+
+// ─── My Vehicle Panel ──────────────────────────────────────────────────────────
+function MyVehiclePanel({ vehicle, setVehicle, routes, activeIdx }: {
+  vehicle: VehicleDetails;
+  setVehicle: React.Dispatch<React.SetStateAction<VehicleDetails>>;
+  routes: OSRMRoute[];
+  activeIdx: number;
+}) {
+  const active = routes[activeIdx];
+  const distKm = active?.distanceKm ?? 0;
+
+  // Parse inputs
+  const mileage   = parseFloat(vehicle.mileage) || 0;
+  const fuelLeft  = parseFloat(vehicle.fuelLeft) || 0;
+  const tankSize  = parseFloat(vehicle.tankSize) || 0;
+  const fuelPrice = parseFloat(vehicle.fuelPrice) || (vehicle.type === 'ev' ? 8 : 105);
+
+  // Calculations
+  const fuelNeeded   = mileage > 0 ? distKm / mileage : 0;
+  const canReach     = fuelLeft >= fuelNeeded && fuelNeeded > 0;
+  const rangeKm      = mileage > 0 ? fuelLeft * mileage : 0;
+  const totalCost    = fuelNeeded * fuelPrice;
+  const afterFuel    = fuelLeft - fuelNeeded;
+  const fuelPct      = tankSize > 0 ? Math.min(100, (fuelLeft / tankSize) * 100) : null;
+  const needRefill   = !canReach && fuelNeeded > 0;
+  const shortfallKm  = needRefill ? (fuelNeeded - fuelLeft) * mileage : 0;
+
+  const typeConfig = {
+    car:  { label: 'Car',           unit: 'km/L', fuelUnit: 'L',   emoji: '🚗', tankLabel: 'Tank Size (L)',  fuelLeftLabel: 'Fuel Left (L)',  color: 'blue' },
+    bike: { label: 'Bike / 2W',     unit: 'km/L', fuelUnit: 'L',   emoji: '🏍️', tankLabel: 'Tank Size (L)',  fuelLeftLabel: 'Fuel Left (L)',  color: 'green' },
+    ev:   { label: 'Electric (EV)', unit: 'km/kWh', fuelUnit: 'kWh', emoji: '⚡', tankLabel: 'Battery (kWh)', fuelLeftLabel: 'Battery Left (kWh)', color: 'purple' },
+  }[vehicle.type];
+
+  const colorMap: Record<string,string> = {
+    blue:   'bg-blue-50 border-blue-200 text-blue-900',
+    green:  'bg-green-50 border-green-200 text-green-900',
+    purple: 'bg-purple-50 border-purple-200 text-purple-900',
+  };
+  const badgeMap: Record<string,string> = {
+    blue: 'bg-blue-100 text-blue-700', green: 'bg-green-100 text-green-700', purple: 'bg-purple-100 text-purple-700',
+  };
+
+  return (
+    <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">My Vehicle</p>
+          <h3 className="text-sm font-black text-black">Personal Fuel Calculator</h3>
+        </div>
+        <span className="text-2xl">{typeConfig.emoji}</span>
+      </div>
+
+      {/* Vehicle type toggle */}
+      <div className="grid grid-cols-3 gap-1.5 bg-zinc-100 rounded-xl p-1">
+        {(['car', 'bike', 'ev'] as const).map(t => (
+          <button key={t} onClick={() => setVehicle(v => ({ ...v, type: t }))}
+            className={`rounded-lg py-1.5 text-[10px] font-black transition-all ${vehicle.type === t ? 'bg-black text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-200'}`}>
+            {{ car: '🚗 Car', bike: '🏍️ Bike', ev: '⚡ EV' }[t]}
+          </button>
+        ))}
+      </div>
+
+      {/* Vehicle name */}
+      <div>
+        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">Vehicle Name / Model</label>
+        <input
+          value={vehicle.vehicleName}
+          onChange={e => setVehicle(v => ({ ...v, vehicleName: e.target.value }))}
+          placeholder="e.g. Honda City, Royal Enfield, Ather 450X..."
+          className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2 text-xs font-bold text-black outline-none"
+        />
+      </div>
+
+      {/* Input grid */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">
+            Mileage ({typeConfig.unit})
+          </label>
+          <input type="number" min="1" step="0.1"
+            value={vehicle.mileage}
+            onChange={e => setVehicle(v => ({ ...v, mileage: e.target.value }))}
+            placeholder={vehicle.type === 'ev' ? '5.5' : '15'}
+            className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2 text-xs font-bold text-black outline-none"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">
+            {typeConfig.fuelLeftLabel}
+          </label>
+          <input type="number" min="0" step="0.1"
+            value={vehicle.fuelLeft}
+            onChange={e => setVehicle(v => ({ ...v, fuelLeft: e.target.value }))}
+            placeholder={vehicle.type === 'ev' ? '20' : '10'}
+            className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2 text-xs font-bold text-black outline-none"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">
+            {typeConfig.tankLabel}
+          </label>
+          <input type="number" min="1" step="0.5"
+            value={vehicle.tankSize}
+            onChange={e => setVehicle(v => ({ ...v, tankSize: e.target.value }))}
+            placeholder={vehicle.type === 'ev' ? '30' : '45'}
+            className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2 text-xs font-bold text-black outline-none"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">
+            {vehicle.type === 'ev' ? 'Price (₹/kWh)' : 'Fuel Price (₹/L)'}
+          </label>
+          <input type="number" min="1" step="0.5"
+            value={vehicle.fuelPrice}
+            onChange={e => setVehicle(v => ({ ...v, fuelPrice: e.target.value }))}
+            placeholder={vehicle.type === 'ev' ? '8' : '105'}
+            className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2 text-xs font-bold text-black outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Results — only if we have enough data */}
+      {mileage > 0 && fuelLeft > 0 && distKm > 0 && (
+        <div className={`rounded-xl border p-3 space-y-3 ${colorMap[typeConfig.color]}`}>
+          {/* Can-reach banner */}
+          <div className={`flex items-center gap-2 rounded-xl px-3 py-2 ${canReach ? 'bg-emerald-100 border border-emerald-300' : 'bg-red-100 border border-red-300'}`}>
+            <span className="text-lg">{canReach ? '✅' : '⛽'}</span>
+            <div>
+              <p className={`text-xs font-black ${canReach ? 'text-emerald-900' : 'text-red-900'}`}>
+                {canReach
+                  ? `You can reach ${routes[activeIdx] ? 'destination' : 'your goal'} comfortably!`
+                  : `⚠️ Not enough fuel! Short by ~${shortfallKm.toFixed(0)} km`}
+              </p>
+              <p className={`text-[10px] ${canReach ? 'text-emerald-700' : 'text-red-700'}`}>
+                {canReach
+                  ? `${afterFuel.toFixed(1)} ${typeConfig.fuelUnit} remaining after trip`
+                  : `Fill at least ${(fuelNeeded - fuelLeft).toFixed(1)} ${typeConfig.fuelUnit} more before leaving`}
+              </p>
+            </div>
+          </div>
+
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white/70 rounded-xl p-2.5 text-center">
+              <div className="text-sm font-black">{fuelNeeded.toFixed(2)} {typeConfig.fuelUnit}</div>
+              <div className="text-[9px] opacity-70 uppercase tracking-wide">Fuel Needed</div>
+            </div>
+            <div className="bg-white/70 rounded-xl p-2.5 text-center">
+              <div className="text-sm font-black">₹{totalCost.toFixed(0)}</div>
+              <div className="text-[9px] opacity-70 uppercase tracking-wide">Trip Cost</div>
+            </div>
+            <div className="bg-white/70 rounded-xl p-2.5 text-center">
+              <div className="text-sm font-black">{rangeKm.toFixed(0)} km</div>
+              <div className="text-[9px] opacity-70 uppercase tracking-wide">Your Range</div>
+            </div>
+            <div className="bg-white/70 rounded-xl p-2.5 text-center">
+              <div className="text-sm font-black">{canReach ? afterFuel.toFixed(1) : '—'} {canReach ? typeConfig.fuelUnit : ''}</div>
+              <div className="text-[9px] opacity-70 uppercase tracking-wide">Left After Trip</div>
+            </div>
+          </div>
+
+          {/* Tank fill gauge */}
+          {fuelPct !== null && (
+            <div>
+              <div className="flex justify-between text-[9px] mb-1 font-bold opacity-70">
+                <span>Tank Level</span>
+                <span>{fuelPct.toFixed(0)}%</span>
+              </div>
+              <div className="h-3 bg-white/60 rounded-full overflow-hidden border border-white/80">
+                <div
+                  className={`h-full rounded-full transition-all ${fuelPct > 50 ? 'bg-emerald-500' : fuelPct > 25 ? 'bg-amber-400' : 'bg-red-500'}`}
+                  style={{ width: `${fuelPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Per-route comparison */}
+          {routes.length > 1 && (
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-wider opacity-70 mb-1.5">Fuel Needed Per Route</p>
+              <div className="space-y-1">
+                {routes.map((r, i) => {
+                  const need = mileage > 0 ? r.distanceKm / mileage : 0;
+                  const ok   = fuelLeft >= need;
+                  const RCOLORS = ['#2563EB', '#16A34A', '#CA8A04'];
+                  const RLABELS = ['Fastest', 'Balanced', 'Eco'];
+                  return (
+                    <div key={i} className="flex items-center gap-2 bg-white/60 rounded-lg px-2 py-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: RCOLORS[i] }} />
+                      <span className="text-[10px] font-bold flex-1">{RLABELS[i]} · {r.distanceKm} km</span>
+                      <span className="text-[10px] font-black">{need.toFixed(1)} {typeConfig.fuelUnit}</span>
+                      <span className="text-[10px]">{ok ? '✅' : '❌'}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {vehicle.vehicleName && (
+            <p className="text-[9px] opacity-60 font-semibold text-center">📋 Vehicle: {vehicle.vehicleName}</p>
+          )}
+        </div>
+      )}
+
+      {mileage === 0 && (
+        <p className="text-[10px] text-zinc-400 text-center py-2">Enter your vehicle mileage above to see fuel analysis</p>
+      )}
+    </div>
   );
 }
 
@@ -1050,18 +1298,22 @@ function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
   const [toCoord, setToCoord] = useState<{ lat: number; lng: number } | null>(null);
   const [fromName, setFromName] = useState('');
   const [toName, setToName] = useState('');
+  const [showVehicle, setShowVehicle] = useState(false);
+  const [vehicle, setVehicle] = useState<VehicleDetails>({
+    type: 'car', mileage: '', fuelLeft: '', tankSize: '', fuelPrice: '', vehicleName: '',
+  });
 
   const ROUTE_CONFIGS = [
-    { label: '🔵 Fastest',      color: '#2563EB', speedNote: 'Highway speed — highest fuel use' },
-    { label: '🟢 Balanced',     color: '#16A34A', speedNote: 'City mix — moderate fuel use' },
-    { label: '🟡 Eco-Friendly', color: '#CA8A04', speedNote: 'Slower but maximum mileage' },
+    { label: '🔵 Fastest',      color: '#2563EB', desc: 'Highway · Max fuel use' },
+    { label: '🟢 Balanced',     color: '#16A34A', desc: 'City mix · Moderate' },
+    { label: '🟡 Eco-Friendly', color: '#CA8A04', desc: 'Longer · Best mileage' },
   ];
 
-  // Mileage helpers
-  function carKmpl(tag: number) { return [15, 16.5, 18][tag] ?? 15; }
-  function bikeKmpl(tag: number) { return [40, 44, 50][tag] ?? 40; }
-  function optSpeedCar(tag: number) { return [60, 55, 50][tag] ?? 60; }
-  function optSpeedBike(tag: number) { return [50, 45, 40][tag] ?? 50; }
+  // Generic mileage estimates (used when user hasn't entered their own)
+  function carKmpl(i: number) { return [15, 16.5, 18][i] ?? 15; }
+  function bikeKmpl(i: number) { return [40, 44, 50][i] ?? 40; }
+  function optSpeedCar(i: number) { return [60, 55, 50][i] ?? 60; }
+  function optSpeedBike(i: number) { return [50, 45, 40][i] ?? 50; }
 
   const compute = async () => {
     if (!toText.trim()) { toast.error('Enter a destination!'); return; }
@@ -1091,7 +1343,7 @@ function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
       setFromName(origin.name);
       setToName(dest.name);
       setRoutes(r);
-      toast.success(`✅ Found ${r.length} route${r.length > 1 ? 's' : ''}!`);
+      toast.success(`✅ Found ${r.length} route${r.length > 1 ? 's' : ''} — all shown on map!`);
     } catch (e: any) {
       setError(e.message || 'Could not compute route. Try again.');
     } finally {
@@ -1107,11 +1359,11 @@ function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
       <div className="mb-4">
         <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Smart Route Finder</p>
         <h2 className="text-[22px] font-black text-black leading-tight">Route Planner</h2>
-        <p className="text-[11px] text-zinc-400 mt-0.5">Type any location — 3 route alternatives with mileage</p>
+        <p className="text-[11px] text-zinc-400 mt-0.5">Type any location — all routes shown simultaneously on map</p>
       </div>
 
-      {/* Inputs */}
-      <div className="space-y-2.5 mb-4">
+      {/* Location Inputs */}
+      <div className="space-y-2.5 mb-3">
         <div>
           <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🟢 Starting From</label>
           <input
@@ -1132,7 +1384,7 @@ function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
             value={toText}
             onChange={e => { setToText(e.target.value); setRoutes([]); }}
             disabled={loading}
-            placeholder="e.g. Dharwad, Goa, Bengaluru, Mall of Mysore..."
+            placeholder="e.g. Dharwad, Goa, Bengaluru, Mysuru..."
             className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2.5 text-xs font-bold text-black outline-none transition-all"
           />
         </div>
@@ -1140,113 +1392,132 @@ function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
 
       {error && <p className="text-xs text-red-500 font-bold bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3">{error}</p>}
 
+      {/* Find Routes button */}
       <button onClick={compute} disabled={loading}
-        className="btn-primary w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 mb-5">
+        className="btn-primary w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 mb-3">
         {loading
-          ? <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Finding Routes…</>
-          : <><Route size={14} /> Find 3 Route Alternatives</>
+          ? <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Finding all routes…</>
+          : <><Route size={14} /> Find Routes (All shown on map)</>
         }
       </button>
 
-      {/* Results */}
+      {/* My Vehicle toggle button */}
+      <button
+        onClick={() => setShowVehicle(v => !v)}
+        className={`w-full py-2.5 text-xs font-black flex items-center justify-center gap-2 mb-5 rounded-xl border transition-all ${showVehicle ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'}`}
+      >
+        <Car size={13} /> {showVehicle ? '✕ Hide My Vehicle Details' : '🚗 Add My Vehicle Details'}
+      </button>
+
+      {/* Vehicle Details Panel (shown when toggled) */}
+      {showVehicle && (
+        <div className="mb-5">
+          <MyVehiclePanel vehicle={vehicle} setVehicle={setVehicle} routes={routes} activeIdx={activeIdx} />
+        </div>
+      )}
+
+      {/* Route Results */}
       {routes.length > 0 && fromCoord && toCoord && (
         <div className="space-y-4 animate-fade-in">
-          {/* Route Selector */}
+
+          {/* Map — ALL routes shown simultaneously */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">🗺️ All Routes on Map</p>
+              <div className="flex gap-2 flex-wrap">
+                {routes.map((_, i) => (
+                  <span key={i} className="flex items-center gap-1 text-[9px] font-bold text-zinc-500">
+                    <span className="inline-block h-2 w-5 rounded-full" style={{ background: ROUTE_CONFIGS[i]?.color || '#000' }} />
+                    {ROUTE_CONFIGS[i]?.label.split(' ').slice(1).join(' ')}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <SmartRouteMap
+              routes={routes}
+              fromCoord={fromCoord} toCoord={toCoord}
+              fromName={fromName} toName={toName}
+              activeIdx={activeIdx}
+            />
+            <p className="text-[9px] text-zinc-400 mt-1.5 text-center">Tap a route label below to see its details</p>
+          </div>
+
+          {/* Route selector cards — click to view details */}
           <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${routes.length}, 1fr)` }}>
             {routes.map((r, i) => {
               const cfg = ROUTE_CONFIGS[i] || ROUTE_CONFIGS[0];
               return (
                 <button key={i} onClick={() => setActiveIdx(i)}
-                  className={`rounded-xl px-2 py-2.5 text-xs font-bold border transition-all text-center ${i === activeIdx ? 'bg-black text-white border-black shadow-sm' : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'}`}>
-                  <div className="text-base">{cfg.label.split(' ')[0]}</div>
-                  <div className="mt-0.5 truncate">{cfg.label.split(' ').slice(1).join(' ')}</div>
-                  <div className="text-[10px] mt-0.5 opacity-80">{r.distanceKm} km</div>
-                  <div className="text-[10px] opacity-80">{r.durationMins} min</div>
+                  className={`rounded-2xl px-2 py-3 text-xs font-bold border-2 transition-all text-center ${i === activeIdx ? 'bg-black text-white border-black shadow-md' : 'bg-white text-zinc-700 hover:bg-zinc-50'}`}
+                  style={i !== activeIdx ? { borderColor: cfg.color + '66' } : {}}>
+                  <div className="text-xl mb-0.5">{cfg.label.split(' ')[0]}</div>
+                  <div className="font-black text-[11px] leading-tight">{cfg.label.split(' ').slice(1).join(' ')}</div>
+                  <div className="mt-1.5 space-y-0.5">
+                    <div className="text-[11px] font-black">{r.distanceKm} km</div>
+                    <div className="text-[10px] opacity-80">{r.durationMins} min</div>
+                  </div>
+                  {i === activeIdx && <div className="mt-1 text-[9px] opacity-70">▼ Details below</div>}
                 </button>
               );
             })}
           </div>
 
-          {/* Legend */}
-          <div className="flex gap-3 flex-wrap text-[10px] text-zinc-500">
-            {routes.map((_, i) => (
-              <span key={i} className="flex items-center gap-1.5">
-                <span className="inline-block h-1.5 w-4 rounded-full" style={{ background: ROUTE_CONFIGS[i]?.color || '#000', opacity: i === activeIdx ? 1 : 0.4 }} />
-                {ROUTE_CONFIGS[i]?.label.split(' ').slice(1).join(' ')}
-              </span>
-            ))}
-          </div>
-
-          {/* Map */}
-          <SmartRouteMap
-            routes={routes}
-            fromCoord={fromCoord} toCoord={toCoord}
-            fromName={fromName} toName={toName}
-            activeIdx={activeIdx}
-          />
-
-          {/* Route detail for active */}
+          {/* Active route details */}
           {active && (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white border border-zinc-200 rounded-2xl p-3 text-center">
-                  <div className="text-lg">📏</div>
-                  <div className="text-sm font-black text-black">{active.distanceKm} km</div>
-                  <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Distance</div>
-                </div>
-                <div className="bg-white border border-zinc-200 rounded-2xl p-3 text-center">
-                  <div className="text-lg">⏱️</div>
-                  <div className="text-sm font-black text-black">{active.durationMins} min</div>
-                  <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Est. Travel Time</div>
+            <div className="space-y-3">
+              <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3">
+                <p className="text-[9px] text-zinc-400 font-black uppercase tracking-wider mb-2">{ROUTE_CONFIGS[activeIdx]?.label} — Route Details</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div className="text-sm font-black text-black">📏 {active.distanceKm} km</div>
+                    <div className="text-[9px] text-zinc-400 uppercase tracking-wide">Distance</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-black">⏱️ {active.durationMins} min</div>
+                    <div className="text-[9px] text-zinc-400 uppercase tracking-wide">Travel Time</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-black text-black">🛣️ {ROUTE_CONFIGS[activeIdx]?.desc?.split(' · ')[0]}</div>
+                    <div className="text-[9px] text-zinc-400 uppercase tracking-wide">Type</div>
+                  </div>
                 </div>
               </div>
 
-              {/* Vehicle Mileage */}
+              {/* Generic vehicle mileage comparison */}
               <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm">
-                <p className="text-xs font-black text-black mb-3 flex items-center gap-2">⛽ Vehicle Mileage — {ROUTE_CONFIGS[activeIdx]?.label}</p>
-                <div className="space-y-2.5">
+                <p className="text-xs font-black text-black mb-3">⛽ General Mileage Estimate — {ROUTE_CONFIGS[activeIdx]?.label}</p>
+                <div className="space-y-2">
                   {/* Car */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5"><Car size={14} className="text-blue-600" /><span className="font-black text-xs text-blue-900">Car</span></div>
-                      <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-lg">{carKmpl(activeIdx)} km/L</span>
+                  <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5">
+                    <Car size={16} className="text-blue-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black text-blue-900">Car — {carKmpl(activeIdx)} km/L</div>
+                      <div className="text-[10px] text-blue-700">{(active.distanceKm / carKmpl(activeIdx)).toFixed(1)} L · ₹{Math.round((active.distanceKm / carKmpl(activeIdx)) * 105)}</div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 text-center">
-                      <div><div className="text-xs font-black text-blue-900">🛢️ {(active.distanceKm / carKmpl(activeIdx)).toFixed(1)} L</div><div className="text-[9px] text-blue-600">Fuel</div></div>
-                      <div><div className="text-xs font-black text-blue-900">₹{Math.round((active.distanceKm / carKmpl(activeIdx)) * 105)}</div><div className="text-[9px] text-blue-600">Cost</div></div>
-                      <div><div className="text-xs font-black text-blue-900 flex items-center justify-center gap-0.5"><Zap size={10}/>{optSpeedCar(activeIdx)} km/h</div><div className="text-[9px] text-blue-600">Best speed</div></div>
-                    </div>
+                    <div className="text-[10px] font-black text-blue-700 flex items-center gap-0.5"><Zap size={9}/>{optSpeedCar(activeIdx)} km/h best</div>
                   </div>
                   {/* Bike */}
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5"><Car size={14} className="text-green-600" /><span className="font-black text-xs text-green-900">Bike / 2-Wheeler</span></div>
-                      <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-lg">{bikeKmpl(activeIdx)} km/L</span>
+                  <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                    <Car size={16} className="text-green-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black text-green-900">Bike — {bikeKmpl(activeIdx)} km/L</div>
+                      <div className="text-[10px] text-green-700">{(active.distanceKm / bikeKmpl(activeIdx)).toFixed(1)} L · ₹{Math.round((active.distanceKm / bikeKmpl(activeIdx)) * 105)}</div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 text-center">
-                      <div><div className="text-xs font-black text-green-900">🛢️ {(active.distanceKm / bikeKmpl(activeIdx)).toFixed(1)} L</div><div className="text-[9px] text-green-600">Fuel</div></div>
-                      <div><div className="text-xs font-black text-green-900">₹{Math.round((active.distanceKm / bikeKmpl(activeIdx)) * 105)}</div><div className="text-[9px] text-green-600">Cost</div></div>
-                      <div><div className="text-xs font-black text-green-900 flex items-center justify-center gap-0.5"><Zap size={10}/>{optSpeedBike(activeIdx)} km/h</div><div className="text-[9px] text-green-600">Best speed</div></div>
-                    </div>
+                    <div className="text-[10px] font-black text-green-700 flex items-center gap-0.5"><Zap size={9}/>{optSpeedBike(activeIdx)} km/h best</div>
                   </div>
                   {/* EV */}
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5"><Zap size={14} className="text-purple-600" /><span className="font-black text-xs text-purple-900">Electric Vehicle</span></div>
-                      <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-lg">{[120, 110, 100][activeIdx]} Wh/km</span>
+                  <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2.5">
+                    <Zap size={16} className="text-purple-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black text-purple-900">EV — {[120, 110, 100][activeIdx]} Wh/km</div>
+                      <div className="text-[10px] text-purple-700">{((active.distanceKm * ([120, 110, 100][activeIdx] ?? 120)) / 1000).toFixed(1)} kWh · ₹{Math.round(((active.distanceKm * ([120, 110, 100][activeIdx] ?? 120)) / 1000) * 8)}</div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 text-center">
-                      <div><div className="text-xs font-black text-purple-900">⚡ {((active.distanceKm * ([120, 110, 100][activeIdx] ?? 120)) / 1000).toFixed(1)} kWh</div><div className="text-[9px] text-purple-600">Energy</div></div>
-                      <div><div className="text-xs font-black text-purple-900">₹{Math.round(((active.distanceKm * ([120, 110, 100][activeIdx] ?? 120)) / 1000) * 8)}</div><div className="text-[9px] text-purple-600">Charge cost</div></div>
-                      <div><div className="text-xs font-black text-purple-900 flex items-center justify-center gap-0.5"><Zap size={10}/>{[45, 42, 38][activeIdx] ?? 45} km/h</div><div className="text-[9px] text-purple-600">Best speed</div></div>
-                    </div>
+                    <div className="text-[10px] font-black text-purple-700 flex items-center gap-0.5"><Zap size={9}/>{[45, 42, 38][activeIdx] ?? 45} km/h best</div>
                   </div>
                 </div>
-                <p className="text-[9px] text-zinc-400 mt-2.5 leading-relaxed">
-                  💡 Drive at the optimal speed for maximum mileage. Eco route saves ~20% fuel vs Fastest. Fuel: ₹105/L · EV: ₹8/kWh.
-                </p>
+                <p className="text-[9px] text-zinc-400 mt-2">💡 Add your vehicle above for personalised fuel + range check per route</p>
               </div>
-            </>
+            </div>
           )}
         </div>
       )}
