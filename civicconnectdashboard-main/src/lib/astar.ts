@@ -37,6 +37,7 @@ export const BELAGAVI_NODES: RoadNode[] = [
   { id: "gokak",    name: "Gokak Road",            lat: 15.8650, lng: 74.4800 },
   { id: "nehru",    name: "Nehru Nagar",           lat: 15.8480, lng: 74.5200 },
   { id: "market",   name: "City Market",           lat: 15.8395, lng: 74.5000 },
+  { id: "cbt",      name: "CBT Bus Stand Belagavi", lat: 15.8572, lng: 74.5065 },
   { id: "station",  name: "Railway Station",       lat: 15.8420, lng: 74.4870 },
   { id: "airport",  name: "Sambra Airport",        lat: 15.8625, lng: 74.6183 },
   { id: "unkal",    name: "Unkal Lake Road",       lat: 15.8740, lng: 74.5050 },
@@ -55,6 +56,7 @@ export const BELAGAVI_EDGES: Record<string, RoadEdge[]> = {
     { to: "bogarvs", weight: 0.80, congestion: 1.5, road: "Bogarves Rd" },
     { to: "kls",     weight: 0.55, congestion: 1.3, road: "KLS Cross Rd" },
     { to: "college", weight: 0.75, congestion: 1.4, road: "College Road" },
+    { to: "cbt",     weight: 0.65, congestion: 1.3, road: "CBT Main Road" },
   ],
   college: [
     { to: "rcircle", weight: 0.75, congestion: 1.4, road: "College Road" },
@@ -72,6 +74,7 @@ export const BELAGAVI_EDGES: Record<string, RoadEdge[]> = {
     { to: "khana",   weight: 0.70, congestion: 1.0, road: "Ring Road" },
     { to: "bogarvs", weight: 0.60, congestion: 1.2, road: "Bogarvs Link" },
     { to: "unkal",   weight: 1.00, congestion: 1.0, road: "Unkal Rd" },
+    { to: "cbt",     weight: 0.70, congestion: 1.2, road: "KLS-CBT Link" },
   ],
   angol: [
     { to: "rpd",     weight: 1.10, congestion: 1.0, road: "Angol Rd" },
@@ -88,6 +91,7 @@ export const BELAGAVI_EDGES: Record<string, RoadEdge[]> = {
     { to: "kls",     weight: 0.60, congestion: 1.2, road: "Bogarvs Link" },
     { to: "nehru",   weight: 0.90, congestion: 1.0, road: "Nehru Link" },
     { to: "udyambag",weight: 0.70, congestion: 1.1, road: "Udyambag Blvd" },
+    { to: "cbt",     weight: 0.55, congestion: 1.4, road: "Khade Bazar Rd" },
   ],
   udyambag: [
     { to: "bogarvs", weight: 0.70, congestion: 1.1, road: "Udyambag Blvd" },
@@ -109,11 +113,20 @@ export const BELAGAVI_EDGES: Record<string, RoadEdge[]> = {
     { to: "angol",   weight: 0.80, congestion: 1.1, road: "Angol Rd" },
     { to: "camp",    weight: 0.70, congestion: 1.0, road: "Market Access" },
     { to: "station", weight: 0.55, congestion: 1.1, road: "Station Rd" },
+    { to: "cbt",     weight: 0.95, congestion: 1.2, road: "Central Market Rd" },
   ],
   station: [
     { to: "rpd",     weight: 0.90, congestion: 1.2, road: "Station Rd" },
     { to: "angol",   weight: 0.75, congestion: 1.0, road: "Station Link" },
     { to: "market",  weight: 0.55, congestion: 1.1, road: "Station Rd" },
+    { to: "cbt",     weight: 1.20, congestion: 1.1, road: "Station-CBT Corridor" },
+  ],
+  cbt: [
+    { to: "rcircle", weight: 0.65, congestion: 1.3, road: "CBT Main Road" },
+    { to: "bogarvs", weight: 0.55, congestion: 1.4, road: "Khade Bazar Rd" },
+    { to: "kls",     weight: 0.70, congestion: 1.2, road: "KLS-CBT Link" },
+    { to: "market",  weight: 0.95, congestion: 1.2, road: "Central Market Rd" },
+    { to: "station", weight: 1.20, congestion: 1.1, road: "Station-CBT Corridor" },
   ],
   airport: [
     { to: "udyambag",weight: 8.50, congestion: 1.0, road: "NH-548" },
