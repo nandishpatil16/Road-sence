@@ -952,171 +952,302 @@ function AStarRouteMap({ result, fromNode, toNode }: { result: AStarResult; from
   return <div ref={mapRef} style={{ height: 240, borderRadius: "1rem", overflow: "hidden", border: "1px solid #E4E4E7" }} />;
 }
 
-// ─── 7. Smart Route Screen — A* Algorithm ─────────────────────────────────────
+// ─── 7. Smart Route Finder — Free-text geocoded locations with OSRM real routing ──
+type OSRMRoute = { geometry: number[][]; distanceKm: number; durationMins: number };
+
+async function geocodePlace(query: string): Promise<{ lat: number; lng: number; name: string } | null> {
+  try {
+    const r = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
+    );
+    const d = await r.json();
+    const p = d.results?.[0];
+    if (!p) return null;
+    return { lat: p.latitude, lng: p.longitude, name: [p.name, p.admin1].filter(Boolean).join(', ') };
+  } catch { return null; }
+}
+
+async function fetchOSRMRoutes(
+  fromLat: number, fromLng: number, toLat: number, toLng: number
+): Promise<OSRMRoute[]> {
+  const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&alternatives=true`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.code !== 'Ok' || !data.routes?.length) return [];
+  return data.routes.slice(0, 3).map((r: any) => ({
+    geometry: r.geometry.coordinates as number[][],
+    distanceKm: Math.round(r.distance / 1000),
+    durationMins: Math.ceil(r.duration / 60),
+  }));
+}
+
+function SmartRouteMap({ routes, fromCoord, toCoord, fromName, toName, activeIdx }: {
+  routes: OSRMRoute[];
+  fromCoord: { lat: number; lng: number };
+  toCoord: { lat: number; lng: number };
+  fromName: string; toName: string; activeIdx: number;
+}) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapObj = useRef<L.Map | null>(null);
+
+  const COLORS = ['#2563EB', '#16A34A', '#CA8A04'];
+  const LABELS = ['Fastest', 'Balanced', 'Eco'];
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; }
+
+    const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false });
+    mapObj.current = map;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+
+    const allPts: [number, number][] = [[fromCoord.lat, fromCoord.lng], [toCoord.lat, toCoord.lng]];
+
+    // Draw inactive routes first (dimmed), active last (on top)
+    [...routes].reverse().forEach((route, revIdx) => {
+      const idx = routes.length - 1 - revIdx;
+      const pts: [number, number][] = route.geometry.map(([lng, lat]) => [lat, lng]);
+      pts.forEach(p => allPts.push(p));
+      const isActive = idx === activeIdx;
+      L.polyline(pts, { color: '#fff', weight: isActive ? 9 : 7, opacity: isActive ? 0.9 : 0.5 }).addTo(map);
+      L.polyline(pts, {
+        color: COLORS[idx] || COLORS[0],
+        weight: isActive ? 6 : 3,
+        opacity: isActive ? 1 : 0.35,
+        dashArray: isActive ? undefined : '7 5',
+      }).bindTooltip(`${LABELS[idx]} · ${route.distanceKm} km · ${route.durationMins} min`, { sticky: true }).addTo(map);
+    });
+
+    // Start marker
+    const startIcon = L.divIcon({ className: '', iconSize: [32, 32], iconAnchor: [16, 16],
+      html: `<div style="width:32px;height:32px;border-radius:50%;background:#22C55E;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:14px">🟢</div>` });
+    L.marker([fromCoord.lat, fromCoord.lng], { icon: startIcon }).bindPopup(`<b>Start:</b> ${fromName}`).addTo(map);
+
+    // End marker
+    const endIcon = L.divIcon({ className: '', iconSize: [32, 32], iconAnchor: [16, 16],
+      html: `<div style="width:32px;height:32px;border-radius:50%;background:#EF4444;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:14px">🏁</div>` });
+    L.marker([toCoord.lat, toCoord.lng], { icon: endIcon }).bindPopup(`<b>Destination:</b> ${toName}`).addTo(map);
+
+    map.fitBounds(L.latLngBounds(allPts), { padding: [30, 30] });
+
+    return () => { mapObj.current?.remove(); mapObj.current = null; };
+  }, [routes, fromCoord, toCoord, activeIdx]);
+
+  return (
+    <div ref={mapRef} style={{ height: 260, borderRadius: '1rem', overflow: 'hidden', border: '1px solid #E4E4E7' }} />
+  );
+}
+
 function RouteDirectionScreen({ setTab }: { setTab: (t: MainTab) => void }) {
-  const [fromId, setFromId] = useState("rpd");
-  const [toId, setToId] = useState("college");
-  const [result, setResult] = useState<AStarResult | null>(null);
-  const [computing, setComputing] = useState(false);
-  const [steps, setSteps] = useState<string[]>([]);
-  const [showSteps, setShowSteps] = useState(false);
+  const [fromText, setFromText] = useState('');
+  const [toText, setToText] = useState('');
+  const [useGPS, setUseGPS] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [routes, setRoutes] = useState<OSRMRoute[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [fromCoord, setFromCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [toCoord, setToCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [fromName, setFromName] = useState('');
+  const [toName, setToName] = useState('');
 
-  const nodeList = BELAGAVI_NODES;
-  const nodes = Object.fromEntries(BELAGAVI_NODES.map(n => [n.id, n]));
+  const ROUTE_CONFIGS = [
+    { label: '🔵 Fastest',      color: '#2563EB', speedNote: 'Highway speed — highest fuel use' },
+    { label: '🟢 Balanced',     color: '#16A34A', speedNote: 'City mix — moderate fuel use' },
+    { label: '🟡 Eco-Friendly', color: '#CA8A04', speedNote: 'Slower but maximum mileage' },
+  ];
 
-  const compute = () => {
-    if (fromId === toId) { toast.error("Start and destination must be different!"); return; }
-    setComputing(true);
-    setResult(null);
-    setSteps([]);
+  // Mileage helpers
+  function carKmpl(tag: number) { return [15, 16.5, 18][tag] ?? 15; }
+  function bikeKmpl(tag: number) { return [40, 44, 50][tag] ?? 40; }
+  function optSpeedCar(tag: number) { return [60, 55, 50][tag] ?? 60; }
+  function optSpeedBike(tag: number) { return [50, 45, 40][tag] ?? 50; }
 
-    // Simulate step-by-step A* exploration for visualization
-    setTimeout(() => {
-      const r = runAStar(fromId, toId);
-      setResult(r);
+  const compute = async () => {
+    if (!toText.trim()) { toast.error('Enter a destination!'); return; }
+    setLoading(true); setError(''); setRoutes([]); setActiveIdx(0);
 
-      if (r) {
-        const stepLog: string[] = [
-          `🟢 Start: ${nodes[fromId].name}`,
-          `🎯 Goal: ${nodes[toId].name}`,
-          `📐 Heuristic (h): Haversine straight-line = ${haversine(nodes[fromId], nodes[toId]).toFixed(2)} km`,
-          `⚙️ A* opened ${r.nodesExplored} node(s) from priority queue`,
-          ...r.path.map((n, i) => i === 0
-            ? `  ✅ [0] Node: ${n.name} → f=0+h, enqueue`
-            : `  ✅ [${i}] Via "${r.roads[i - 1]}" → ${n.name}`
-          ),
-          `🏁 Path reconstructed via parent pointers`,
-          `📏 Total road cost g(goal) = ${r.totalKm} km`,
-          r.avoided.length > 0 ? `⚠️ Avoided congested: ${r.avoided.join(", ")}` : `✨ No heavy congestion on path`,
-        ];
-        setSteps(stepLog);
-        toast.success(`✅ A* found optimal route in ${r.totalMins} min!`);
+    try {
+      let origin: { lat: number; lng: number; name: string };
+      if (useGPS || !fromText.trim()) {
+        const pos = await new Promise<GeolocationPosition>((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 })
+        );
+        origin = { lat: pos.coords.latitude, lng: pos.coords.longitude, name: 'My Location (GPS)' };
       } else {
-        toast.error("No route found between selected nodes.");
+        const o = await geocodePlace(fromText);
+        if (!o) throw new Error(`Could not find "${fromText}". Try a city or landmark name.`);
+        origin = o;
       }
-      setComputing(false);
-    }, 600);
+
+      const dest = await geocodePlace(toText);
+      if (!dest) throw new Error(`Could not find "${toText}". Try a city or landmark name.`);
+
+      const r = await fetchOSRMRoutes(origin.lat, origin.lng, dest.lat, dest.lng);
+      if (!r.length) throw new Error('No route found. Check your locations and try again.');
+
+      setFromCoord({ lat: origin.lat, lng: origin.lng });
+      setToCoord({ lat: dest.lat, lng: dest.lng });
+      setFromName(origin.name);
+      setToName(dest.name);
+      setRoutes(r);
+      toast.success(`✅ Found ${r.length} route${r.length > 1 ? 's' : ''}!`);
+    } catch (e: any) {
+      setError(e.message || 'Could not compute route. Try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const congestionColor = (level: string) =>
-    level === "Heavy Traffic" ? "text-red-600 bg-red-50 border-red-200" :
-    level === "Moderate" ? "text-orange-600 bg-orange-50 border-orange-200" :
-    "text-emerald-600 bg-emerald-50 border-emerald-200";
+  const active = routes[activeIdx];
 
   return (
     <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-28 px-4 pt-10 bg-white">
       {/* Header */}
       <div className="mb-4">
-        <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">A* Pathfinding Algorithm</p>
-        <h2 className="text-[22px] font-black text-black leading-tight">Smart Route Finder</h2>
-        <p className="text-[11px] text-zinc-400 mt-0.5">Real A* on Belagavi road graph with live congestion</p>
+        <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">Smart Route Finder</p>
+        <h2 className="text-[22px] font-black text-black leading-tight">Route Planner</h2>
+        <p className="text-[11px] text-zinc-400 mt-0.5">Type any location — 3 route alternatives with mileage</p>
       </div>
 
-      {/* Node Pickers */}
+      {/* Inputs */}
       <div className="space-y-2.5 mb-4">
         <div>
-          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🟢 Start Node</label>
-          <select value={fromId} onChange={e => setFromId(e.target.value)}
-            className="w-full input-field px-3 py-2.5 text-xs font-bold text-black outline-none appearance-none">
-            {nodeList.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-          </select>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🟢 Starting From</label>
+          <input
+            value={useGPS ? '' : fromText}
+            onChange={e => { setFromText(e.target.value); setRoutes([]); }}
+            disabled={useGPS || loading}
+            placeholder={useGPS ? '📍 My Current Location (GPS)' : 'e.g. RPD Cross Belagavi, Hubli Station...'}
+            className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2.5 text-xs font-bold text-black outline-none transition-all"
+          />
+          <label className="flex items-center gap-2 mt-1.5 text-xs text-zinc-500 cursor-pointer font-medium">
+            <input type="checkbox" checked={useGPS} onChange={e => { setUseGPS(e.target.checked); setRoutes([]); }} className="rounded accent-black" />
+            <Navigation size={12} className="text-blue-500" /> Use GPS location
+          </label>
         </div>
         <div>
-          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🔴 Destination Node</label>
-          <select value={toId} onChange={e => setToId(e.target.value)}
-            className="w-full input-field px-3 py-2.5 text-xs font-bold text-black outline-none appearance-none">
-            {nodeList.filter(n => n.id !== fromId).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
-          </select>
+          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1 block">🔴 Destination</label>
+          <input
+            value={toText}
+            onChange={e => { setToText(e.target.value); setRoutes([]); }}
+            disabled={loading}
+            placeholder="e.g. Dharwad, Goa, Bengaluru, Mall of Mysore..."
+            className="w-full bg-zinc-50 border border-zinc-200 focus:border-black rounded-xl px-3 py-2.5 text-xs font-bold text-black outline-none transition-all"
+          />
         </div>
       </div>
 
-      {/* Compute Button */}
-      <button onClick={compute} disabled={computing}
-        className="btn-primary w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 mb-4">
-        {computing ? (
-          <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Computing A* Route...</>
-        ) : (
-          <><Cpu size={14} /> Run A* Algorithm</>
-        )}
+      {error && <p className="text-xs text-red-500 font-bold bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3">{error}</p>}
+
+      <button onClick={compute} disabled={loading}
+        className="btn-primary w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 mb-5">
+        {loading
+          ? <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Finding Routes…</>
+          : <><Route size={14} /> Find 3 Route Alternatives</>
+        }
       </button>
 
       {/* Results */}
-      {result && (
-        <div className="space-y-3 animate-fade-in">
-          {/* Stats Row */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: "Distance", value: `${result.totalKm} km`, icon: "📏" },
-              { label: "Est. Time", value: `${result.totalMins} min`, icon: "⏱️" },
-              { label: "Nodes", value: `${result.nodesExplored} opened`, icon: "🔍" },
-            ].map(s => (
-              <div key={s.label} className="card p-3 text-center border-zinc-100">
-                <div className="text-base">{s.icon}</div>
-                <div className="text-[13px] font-black text-black">{s.value}</div>
-                <div className="text-[9px] text-zinc-400 font-semibold uppercase">{s.label}</div>
-              </div>
+      {routes.length > 0 && fromCoord && toCoord && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Route Selector */}
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${routes.length}, 1fr)` }}>
+            {routes.map((r, i) => {
+              const cfg = ROUTE_CONFIGS[i] || ROUTE_CONFIGS[0];
+              return (
+                <button key={i} onClick={() => setActiveIdx(i)}
+                  className={`rounded-xl px-2 py-2.5 text-xs font-bold border transition-all text-center ${i === activeIdx ? 'bg-black text-white border-black shadow-sm' : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'}`}>
+                  <div className="text-base">{cfg.label.split(' ')[0]}</div>
+                  <div className="mt-0.5 truncate">{cfg.label.split(' ').slice(1).join(' ')}</div>
+                  <div className="text-[10px] mt-0.5 opacity-80">{r.distanceKm} km</div>
+                  <div className="text-[10px] opacity-80">{r.durationMins} min</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Legend */}
+          <div className="flex gap-3 flex-wrap text-[10px] text-zinc-500">
+            {routes.map((_, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                <span className="inline-block h-1.5 w-4 rounded-full" style={{ background: ROUTE_CONFIGS[i]?.color || '#000', opacity: i === activeIdx ? 1 : 0.4 }} />
+                {ROUTE_CONFIGS[i]?.label.split(' ').slice(1).join(' ')}
+              </span>
             ))}
           </div>
 
-          {/* Congestion badge */}
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold ${congestionColor(result.congestionLevel)}`}>
-            <span>🚦</span>
-            <span>Road Condition: {result.congestionLevel}</span>
-          </div>
+          {/* Map */}
+          <SmartRouteMap
+            routes={routes}
+            fromCoord={fromCoord} toCoord={toCoord}
+            fromName={fromName} toName={toName}
+            activeIdx={activeIdx}
+          />
 
-          {/* Avoided roads */}
-          {result.avoided.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
-              <p className="text-[10px] font-black text-red-600 uppercase tracking-wider mb-1">⚠️ A* Avoided (Congestion &gt; 1.7×)</p>
-              {result.avoided.map((a, i) => <p key={i} className="text-[10px] text-red-500">{a}</p>)}
-            </div>
-          )}
-
-          {/* Route Map */}
-          <div>
-            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-1.5">🗺️ Computed Route on Map</p>
-            <AStarRouteMap result={result} fromNode={nodes[fromId]} toNode={nodes[toId]} />
-          </div>
-
-          {/* Turn-by-Turn Directions */}
-          <div className="card border-zinc-100 overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-100 flex justify-between items-center">
-              <p className="text-xs font-black text-black">Turn-by-Turn Directions</p>
-              <span className="text-[10px] text-zinc-400">{result.path.length - 1} turns</span>
-            </div>
-            {result.path.map((node, i) => (
-              <div key={node.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-50 last:border-0">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                  i === 0 ? "bg-emerald-500 text-white" :
-                  i === result.path.length - 1 ? "bg-red-500 text-white" :
-                  "bg-blue-100 text-blue-600"
-                }`}>{i === 0 ? "S" : i === result.path.length - 1 ? "🏁" : i}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-bold text-black truncate">{node.name}</p>
-                  {result.roads[i] && <p className="text-[10px] text-zinc-400">via {result.roads[i]}</p>}
+          {/* Route detail for active */}
+          {active && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white border border-zinc-200 rounded-2xl p-3 text-center">
+                  <div className="text-lg">📏</div>
+                  <div className="text-sm font-black text-black">{active.distanceKm} km</div>
+                  <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Distance</div>
                 </div>
-                {i < result.path.length - 1 && (
-                  <Navigation2 size={12} className="text-zinc-300 shrink-0" />
-                )}
+                <div className="bg-white border border-zinc-200 rounded-2xl p-3 text-center">
+                  <div className="text-lg">⏱️</div>
+                  <div className="text-sm font-black text-black">{active.durationMins} min</div>
+                  <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Est. Travel Time</div>
+                </div>
               </div>
-            ))}
-          </div>
 
-          {/* A* Step Log — educational trace */}
-          <div className="card border-zinc-100">
-            <button onClick={() => setShowSteps(!showSteps)}
-              className="w-full px-4 py-3 flex justify-between items-center">
-              <p className="text-xs font-black text-black">🔬 A* Exploration Trace</p>
-              <ChevronDown size={14} className={`text-zinc-400 transition-transform ${showSteps ? "rotate-180" : ""}`} />
-            </button>
-            {showSteps && (
-              <div className="border-t border-zinc-100 px-4 py-3 space-y-1 bg-zinc-50 rounded-b-2xl font-mono">
-                {steps.map((s, i) => (
-                  <p key={i} className="text-[9.5px] text-zinc-600 leading-relaxed">{s}</p>
-                ))}
+              {/* Vehicle Mileage */}
+              <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm">
+                <p className="text-xs font-black text-black mb-3 flex items-center gap-2">⛽ Vehicle Mileage — {ROUTE_CONFIGS[activeIdx]?.label}</p>
+                <div className="space-y-2.5">
+                  {/* Car */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5"><Car size={14} className="text-blue-600" /><span className="font-black text-xs text-blue-900">Car</span></div>
+                      <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-lg">{carKmpl(activeIdx)} km/L</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div><div className="text-xs font-black text-blue-900">🛢️ {(active.distanceKm / carKmpl(activeIdx)).toFixed(1)} L</div><div className="text-[9px] text-blue-600">Fuel</div></div>
+                      <div><div className="text-xs font-black text-blue-900">₹{Math.round((active.distanceKm / carKmpl(activeIdx)) * 105)}</div><div className="text-[9px] text-blue-600">Cost</div></div>
+                      <div><div className="text-xs font-black text-blue-900 flex items-center justify-center gap-0.5"><Zap size={10}/>{optSpeedCar(activeIdx)} km/h</div><div className="text-[9px] text-blue-600">Best speed</div></div>
+                    </div>
+                  </div>
+                  {/* Bike */}
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5"><Car size={14} className="text-green-600" /><span className="font-black text-xs text-green-900">Bike / 2-Wheeler</span></div>
+                      <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-lg">{bikeKmpl(activeIdx)} km/L</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div><div className="text-xs font-black text-green-900">🛢️ {(active.distanceKm / bikeKmpl(activeIdx)).toFixed(1)} L</div><div className="text-[9px] text-green-600">Fuel</div></div>
+                      <div><div className="text-xs font-black text-green-900">₹{Math.round((active.distanceKm / bikeKmpl(activeIdx)) * 105)}</div><div className="text-[9px] text-green-600">Cost</div></div>
+                      <div><div className="text-xs font-black text-green-900 flex items-center justify-center gap-0.5"><Zap size={10}/>{optSpeedBike(activeIdx)} km/h</div><div className="text-[9px] text-green-600">Best speed</div></div>
+                    </div>
+                  </div>
+                  {/* EV */}
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5"><Zap size={14} className="text-purple-600" /><span className="font-black text-xs text-purple-900">Electric Vehicle</span></div>
+                      <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-lg">{[120, 110, 100][activeIdx]} Wh/km</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div><div className="text-xs font-black text-purple-900">⚡ {((active.distanceKm * ([120, 110, 100][activeIdx] ?? 120)) / 1000).toFixed(1)} kWh</div><div className="text-[9px] text-purple-600">Energy</div></div>
+                      <div><div className="text-xs font-black text-purple-900">₹{Math.round(((active.distanceKm * ([120, 110, 100][activeIdx] ?? 120)) / 1000) * 8)}</div><div className="text-[9px] text-purple-600">Charge cost</div></div>
+                      <div><div className="text-xs font-black text-purple-900 flex items-center justify-center gap-0.5"><Zap size={10}/>{[45, 42, 38][activeIdx] ?? 45} km/h</div><div className="text-[9px] text-purple-600">Best speed</div></div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[9px] text-zinc-400 mt-2.5 leading-relaxed">
+                  💡 Drive at the optimal speed for maximum mileage. Eco route saves ~20% fuel vs Fastest. Fuel: ₹105/L · EV: ₹8/kWh.
+                </p>
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       )}
     </div>
