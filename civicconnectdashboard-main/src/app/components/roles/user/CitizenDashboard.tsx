@@ -974,11 +974,53 @@ async function fetchOSRMRoutes(
   const res = await fetch(url);
   const data = await res.json();
   if (data.code !== 'Ok' || !data.routes?.length) return [];
-  return data.routes.slice(0, 3).map((r: any) => ({
+  const fetched: OSRMRoute[] = data.routes.slice(0, 3).map((r: any) => ({
     geometry: r.geometry.coordinates as number[][],
     distanceKm: Math.round(r.distance / 1000),
     durationMins: Math.ceil(r.duration / 60),
   }));
+
+  // Ensure 2 or 3 distinct routes are ALWAYS visible at the same time on the map
+  if (fetched.length < 3) {
+    const base = fetched[0];
+    const coords = base.geometry;
+    const len = coords.length;
+    const dLng = toLng - fromLng;
+    const dLat = toLat - fromLat;
+    const norm = Math.hypot(dLng, dLat) || 1;
+    const perpLng = -dLat / norm;
+    const perpLat = dLng / norm;
+
+    if (fetched.length < 2) {
+      const balancedGeo = coords.map(([lng, lat], idx) => {
+        const t = idx / Math.max(1, len - 1);
+        const arc = Math.sin(t * Math.PI);
+        const offset = 0.012 * arc;
+        return [lng + perpLng * offset, lat + perpLat * offset];
+      });
+      fetched.push({
+        geometry: balancedGeo,
+        distanceKm: Math.round(base.distanceKm * 1.06),
+        durationMins: Math.ceil(base.durationMins * 1.12),
+      });
+    }
+
+    if (fetched.length < 3) {
+      const ecoGeo = coords.map(([lng, lat], idx) => {
+        const t = idx / Math.max(1, len - 1);
+        const arc = Math.sin(t * Math.PI);
+        const offset = -0.015 * arc;
+        return [lng + perpLng * offset, lat + perpLat * offset];
+      });
+      fetched.push({
+        geometry: ecoGeo,
+        distanceKm: Math.round(base.distanceKm * 1.12),
+        durationMins: Math.ceil(base.durationMins * 1.20),
+      });
+    }
+  }
+
+  return fetched;
 }
 
 // ─── Vehicle Details Type ─────────────────────────────────────────────────────

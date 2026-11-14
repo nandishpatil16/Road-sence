@@ -203,21 +203,60 @@ export function TravelPrediction({ onBack }: { onBack: () => void }) {
       };
     });
 
-    // If OSRM only returned 1 or 2 routes, synthesise "Eco" as a slightly adjusted copy
-    while (routes.length < 3) {
+    // If OSRM only returned 1 or 2 routes, synthesise distinct alternative routes with curved offset
+    if (routes.length < 3) {
       const base = routes[0];
-      const idx = routes.length;
-      const cfg = ROUTE_CONFIGS[idx];
-      const factor = idx === 1 ? 1.08 : 1.18;
-      routes.push({
-        ...base,
-        label: cfg.label,
-        tag: cfg.tag,
-        color: cfg.color,
-        baseMinutes: Math.ceil(base.baseMinutes * factor),
-        departures: departureEstimates(base.baseMinutes * factor, maxRain),
-        mileage: computeMileage(base.distanceKm, cfg.tag),
-      });
+      const coords = base.geometry;
+      const len = coords.length;
+      const dLng = destPoint.lng - originPoint.lng;
+      const dLat = destPoint.lat - originPoint.lat;
+      const norm = Math.hypot(dLng, dLat) || 1;
+      const perpLng = -dLat / norm;
+      const perpLat = dLng / norm;
+
+      if (routes.length < 2) {
+        const balancedGeo = coords.map(([lng, lat], idx) => {
+          const t = idx / Math.max(1, len - 1);
+          const arc = Math.sin(t * Math.PI);
+          const offset = 0.012 * arc;
+          return [lng + perpLng * offset, lat + perpLat * offset];
+        });
+        const dist = Math.round(base.distanceKm * 1.06);
+        const mins = Math.ceil(base.baseMinutes * 1.12);
+        routes.push({
+          ...base,
+          label: ROUTE_CONFIGS[1].label,
+          tag: ROUTE_CONFIGS[1].tag,
+          color: ROUTE_CONFIGS[1].color,
+          geometry: balancedGeo,
+          distanceKm: dist,
+          baseMinutes: mins,
+          departures: departureEstimates(mins, maxRain),
+          mileage: computeMileage(dist, ROUTE_CONFIGS[1].tag),
+        });
+      }
+
+      if (routes.length < 3) {
+        const ecoGeo = coords.map(([lng, lat], idx) => {
+          const t = idx / Math.max(1, len - 1);
+          const arc = Math.sin(t * Math.PI);
+          const offset = -0.015 * arc;
+          return [lng + perpLng * offset, lat + perpLat * offset];
+        });
+        const dist = Math.round(base.distanceKm * 1.12);
+        const mins = Math.ceil(base.baseMinutes * 1.20);
+        routes.push({
+          ...base,
+          label: ROUTE_CONFIGS[2].label,
+          tag: ROUTE_CONFIGS[2].tag,
+          color: ROUTE_CONFIGS[2].color,
+          geometry: ecoGeo,
+          distanceKm: dist,
+          baseMinutes: mins,
+          departures: departureEstimates(mins, maxRain),
+          mileage: computeMileage(dist, ROUTE_CONFIGS[2].tag),
+        });
+      }
     }
 
     return {
